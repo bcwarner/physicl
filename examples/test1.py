@@ -7,6 +7,7 @@ import phys.newton
 import phys.light
 import numpy as np
 import time
+import matplotlib
 
 sim = phys.Simulation(params={"bounds": np.array([1000, 1000, 1000]), "cl_on": True, "exit": lambda cond: cond.t >= 0.010})
 
@@ -31,3 +32,6 @@ sim.start()
 while sim.running:
         time.sleep(0.1)
         print(sim.get_state())
+
+
+

@@ -4,10 +4,23 @@ import pyopencl.array as cl_array
 import numpy.linalg as np_lin
 import numpy as np
 
+"""
+SI definition for speed of light
+"""
 c = np.double(299792458) # Defined here: https://www.bipm.org/en/CGPM/db/17/1/
 
 class PhotonObject(phys.Object):
+	"""
+	Represents a simple photon.
+	Constrained to require an energy (E) and a velocity whose Euclidean norm is the speed of light.
+	"""
+
+	# Make it so we can have light that's slower than this?
 	def __init__(self, attrs={}):
+		"""
+		Initializes the photon object and checks for constraints.
+
+		"""
 		super().__init__(attrs)
 		if np_lin.norm(self.v) != np_lin.norm(c):
 			raise Exception("Not a valid speed.") # May not work in non-vacuum mediums.
@@ -15,7 +28,14 @@ class PhotonObject(phys.Object):
 			raise Exception("Needs a valid energy.") # Handle wavelengths as an alternative?
 
 class ScatterDeleteStep(phys.Step):
+	"""
+	Step that scatters photon objects from a simulation by removing them.
+	Assumes that the simulation composes the entirety of the medium and has a constant number density and cross-sectional area.
+	"""
 	def __init__(self, n, A):
+		"""
+		Initializes this step with a constant number density (n) and cross-sectional area (A).
+		"""
 		self.n = n
 		self.A = A
 		self.cl_prog = None
@@ -49,6 +69,8 @@ class ScatterDeleteStep(phys.Step):
 		dz = []
 		rand = []
 		pht = []
+
+		# Unwind
 		for obj in sim.objects:
 			if PhotonObject != type(obj):
 				continue
@@ -57,6 +79,8 @@ class ScatterDeleteStep(phys.Step):
 			dz.append(obj.dr[2])
 			rand.append(np.random.random())
 			pht.append(obj)
+
+		# Copy the memory over.
 
 		dx_np = np.array(dx, dtype=np.double)
 		dy_np = np.array(dy, dtype=np.double)
@@ -68,15 +92,21 @@ class ScatterDeleteStep(phys.Step):
 		dz_np_dev = cl_array.to_device(sim.cl_q, dz_np)
 		rand_np_dev = cl_array.to_device(sim.cl_q, rand_np)
 
+
+		# Run the kernel and place the results in res.
 		res = cl_array.empty(sim.cl_q, dx_np.shape, dtype=np.int)
 		self.cl_prog.light_scatter_step_del(sim.cl_q, res.shape, None, dx_np_dev.data, dy_np_dev.data, dz_np_dev.data, rand_np_dev.data, np.double(self.n), np.double(self.A), res.data)
 
+		# Apply the results of the kernel to the simulation.
 		out = res.get()
 		for idx, x in enumerate(out):
 			if x == 1:
 				sim.remove_obj(pht[idx])
 
 	def run(self, sim):
+		"""
+		Runs this step, and will either run it in native Python or OpenCL.
+		"""
 		if sim.cl_on == False:
 			self.__run_py(sim)
 		else:
@@ -92,6 +122,9 @@ class ScatterDeleteStep(phys.Step):
 				sim.remove_obj(obj)
 
 class ScatterSphericalStep(phys.Step):
+	"""
+	Step that scatters photons spherically, according to a defined number density (n) and a defined cross-sectional area (A).
+	"""
 	def __init__(self, n, A):
 		self.n = n
 		self.A = A
@@ -127,6 +160,8 @@ class ScatterSphericalStep(phys.Step):
 	def __run_cl(self, sim):
 		if self.compiled == False:
 			self.__compile_cl__(sim)
+
+		# Load the necessary data into memory.
 
 		dx = []
 		dy = []
@@ -183,23 +218,34 @@ class ScatterSphericalStep(phys.Step):
 		outx = nvx.get()
 		outy = nvy.get()
 		outz = nvz.get()
+
+		# Set the velocity for each photon.
 		for idx in range(0, len(outx)):
 			if not np.isnan(outx[idx]):
 				pht[idx].v = np.array([outx[idx], outy[idx], outz[idx]], dtype=np.double)
 
 	def run(self, sim):
+		"""
+		Runs the simulation either in native Python or in OpenCL
+		"""
 		if sim.cl_on == False:
 			self.__run_py(sim)
 		else:
 			self.__run_cl(sim)
 
 class ScatterMeasureStep(phys.MeasureStep):
-	def __init__(self, out_fn, measure_n=True, measure_locs=[], measure_pos = True):
+	"""
+	Measures the number of photons that cross through a series of planes. 
+	Each plane should be defined with a 3D numpy double array, with the coordinates not defining the location of the plane set to numpy.nan.
+	"""
+	def __init__(self, out_fn, measure_n=True, measure_locs=[]):
 		super().__init__(out_fn)
 		self.measure_locs = measure_locs
 		self.measure_n = measure_n
-		self.measure_pos = measure_pos
 
+	"""
+	Runs this step and records how many photons passed through this plane based upon the current location and previous location.
+	""" 
 	def run(self, sim):
 		out = [sim.t]
 		if self.measure_n:
@@ -223,6 +269,9 @@ class ScatterMeasureStep(phys.MeasureStep):
 		self.data.append(np.array(out))
 
 class ScatterSignMeasureStep(phys.MeasureStep):
+	"""
+	Measures the number of objects with a strictly positive coordinate at each step with regards to x, y, and z coordinates.
+	"""
 	def __init__(self, out_fn, measure_n = True):
 		super().__init__(out_fn)
 		self.measure_n = measure_n
