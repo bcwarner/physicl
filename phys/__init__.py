@@ -53,6 +53,7 @@ class UpdateTimeStep(Step):
 		"""
 		sim.dt = self.fn(sim)
 		sim.t += sim.dt
+		sim.ts.append(sim.t)
 
 class MeasureStep(Step):
 	def __init__(self, out_fn = None):
@@ -168,6 +169,7 @@ class Simulation (threading.Thread):
 		self.start_time = time.time()
 		self.t = 0
 		self.dt = 0
+		self.ts = []
 		self.running = True
 		while not self.exit(self):
 			self.__state_lock.acquire()
