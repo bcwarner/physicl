@@ -3,17 +3,22 @@ import pyopencl as cl
 import pyopencl.array as cl_array
 import numpy.linalg as np_lin
 import numpy as np
+import scipy.stats as st
+
+
 
 """
 SI definition for speed of light
 """
 c = np.double(299792458) # Defined here: https://www.bipm.org/en/CGPM/db/17/1/
+h = np.double(6.62607015e-34) # Defined here: https://www.bipm.org/utils/common/pdf/CGPM-2018/26th-CGPM-Resolutions.pdf
 
 class PhotonObject(phys.Object):
 	"""
 	Represents a simple photon.
 	Constrained to require an energy (E) and a velocity whose Euclidean norm is the speed of light.
 	"""
+
 
 	# Make it so we can have light that's slower than this?
 	def __init__(self, attrs={}):
@@ -26,6 +31,47 @@ class PhotonObject(phys.Object):
 			raise Exception("Not a valid speed.") # May not work in non-vacuum mediums.
 		if "E" not in attrs:
 			raise Exception("Needs a valid energy.") # Handle wavelengths as an alternative?
+
+
+
+def E_from_wavelength(wavelength):
+	"""
+	Converts a wavelength in meters to E in joules.
+	"""
+	return (h * c) / wavelength
+
+
+def generate_photons(n, bins=100, dist="gauss", min=0, max=1, dir=[c, 0, 0]):
+	"""
+	Generates a collection of rays according to a distribution. Works as follows:
+	1. Generates a distribution of E according to dist.
+	2. Multiplies the quantity of rays desired per bin by the resulting distribution, then generates that number of rays per bin. This number is floored.
+	3. Returns a list of the generated rays.
+
+	Acceptable distributions: constant, loglin, gauss
+	"""
+	# log N = log lambda
+	# lambda = hc/E
+	# log N = log (hc/E)^c
+	# N = (hc/E)^c
+
+	# fn: x is position in dist => dist count less-than-equal-to-1
+	# min_fn x is miniumum => min in distribution generator
+	# max_fn analagous to min_fn 
+	dist_tab = {"gauss" : {"fn": lambda x: st.norm.pdf(x), "min_fn": lambda x: st.norm.ppf(0.001), "max_fn": lambda x: st.norm.ppf(0.999)},
+				"constant": {"fn": lambda x: np.array([1] * len(x)), "min_fn": lambda x: min, "max_fn": lambda x:  max},
+				"loglin": {"fn": lambda x: ((h * c) / x) ** -0.1, "min_fn": lambda x: min, "max_fn": lambda x: max}} # Change this constant of proportionality.
+
+	dx = np.linspace(dist_tab[dist]["min_fn"](min), dist_tab[dist]["max_fn"](max), bins) # The distribution space.
+	Ex = np.linspace(min, max, bins) # Linear energy distribution
+	dcount = dist_tab[dist]["fn"](dx) * n # Distribution count for each bin.
+	out = []
+	for idx, x in enumerate(dcount):
+		for i in range(int(np.floor(dcount[idx]))): # Generate dcount[idx] photons with Ex[idx] energy each.
+			out.append(PhotonObject({"v": dir, "E": Ex[idx]})) 
+
+	return out
+
 
 class ScatterDeleteStep(phys.Step):
 	"""
@@ -125,23 +171,37 @@ class ScatterSphericalStep(phys.Step):
 	"""
 	Step that scatters photons spherically, according to a defined number density (n) and a defined cross-sectional area (A).
 	"""
-	def __init__(self, n, A):
-		self.n = n
+	# Append order:
+	# 1. Default params.
+	# 2. Wavelength dependent scattering.
+
+	def __init__(self, n, A, wavelength_dep_scattering = False):
+		self.n = n 
 		self.A = A
 		self.cl_prog = None
 		self.compiled = False
+		self.wavelength_dep_scattering = wavelength_dep_scattering
+
 
 	def __compile_cl__(self, sim):
+
+		params = ["__global double *dx", "__global double *dy", "__global double *dz", 
+											"__global double *rand", "double n", "double A", 
+											"__global double *rtheta", "__global double *rphi",
+											"__global double *ovx", "__global double *ovy", "__global double *ovz",
+											"__global double *nvx", "__global double *nvy", "__global double *nvz"]
+		if self.wavelength_dep_scattering == True:
+			params.extend(["__global double *E"])
+
+		pcoll_vars = ["A", "n", "norm"]
+		if self.wavelength_dep_scattering == True:
+ 			pcoll_vars.append("pow((" + str(h).upper() + " * " + str(c) + ") / E[gid], -4)")
 		kernel_sph = """
-			__kernel void light_scatter_step_sphere(__global double *dx, __global double *dy, __global double *dz, 
-											__global double *rand, double n, double A, 
-											__global double *rtheta, __global double *rphi,
-											__global double *ovx, __global double *ovy, __global double *ovz,
-											__global double *nvx, __global double *nvy, __global double *nvz){
+			__kernel void light_scatter_step_sphere(""" + ", ".join(params) + """){
 
 				int gid = get_global_id(0);
 				double norm = sqrt(pow(dx[gid], 2) + pow(dy[gid], 2) + pow(dz[gid], 2));
-				double pcoll = A * n * norm;
+				double pcoll = """ + " * ".join(pcoll_vars) + """;
 				if (pcoll >= rand[gid]){
 					// Change the velocity.
 					nvx[gid] = """ + str(c) + """ * sin(rtheta[gid]) * cos(rphi[gid]);
@@ -174,6 +234,7 @@ class ScatterSphericalStep(phys.Step):
 		ovz = []
 		rand = []
 		pht = []
+		Es = [] # 
 		for obj in sim.objects:
 			if PhotonObject != type(obj):
 				continue
@@ -187,6 +248,8 @@ class ScatterSphericalStep(phys.Step):
 			ovz.append(obj.v[2])
 			rand.append(np.random.random())
 			pht.append(obj)
+			if self.wavelength_dep_scattering:
+				Es.append(obj.E)
 
 		dx_np = np.array(dx, dtype=np.double)
 		dy_np = np.array(dy, dtype=np.double)
@@ -197,6 +260,8 @@ class ScatterSphericalStep(phys.Step):
 		ovx_np = np.array(ovx, dtype=np.double)
 		ovy_np = np.array(ovy, dtype=np.double)
 		ovz_np = np.array(ovz, dtype=np.double)
+		if self.wavelength_dep_scattering:
+			e_np = np.array(Es, dtype=np.double)
 
 		dx_np_dev = cl_array.to_device(sim.cl_q, dx_np)
 		dy_np_dev = cl_array.to_device(sim.cl_q, dy_np)
@@ -207,13 +272,21 @@ class ScatterSphericalStep(phys.Step):
 		ovx_np_dev = cl_array.to_device(sim.cl_q, ovx_np)
 		ovy_np_dev = cl_array.to_device(sim.cl_q, ovy_np)
 		ovz_np_dev = cl_array.to_device(sim.cl_q, ovz_np)
+		if self.wavelength_dep_scattering:
+			e_np_dev = cl_array.to_device(sim.cl_q, e_np)
 
 		nvx = cl_array.empty(sim.cl_q, ovx_np.shape, dtype=np.double)
 		nvy = cl_array.empty(sim.cl_q, ovx_np.shape, dtype=np.double)
 		nvz = cl_array.empty(sim.cl_q, ovx_np.shape, dtype=np.double)
-		self.cl_prog.light_scatter_step_sphere(sim.cl_q, nvx.shape, None, dx_np_dev.data, dy_np_dev.data, dz_np_dev.data, rand_np_dev.data, np.double(self.n), np.double(self.A),
-												rtheta_np_dev.data, rphi_np_dev.data, ovx_np_dev.data, ovy_np_dev.data, ovz_np_dev.data, 
-												nvx.data, nvy.data, nvz.data)
+
+		call_params = ["sim.cl_q", "nvx.shape", "None", "dx_np_dev.data", "dy_np_dev.data", "dz_np_dev.data", "rand_np_dev.data", "np.double(self.n)", "np.double(self.A)",
+												"rtheta_np_dev.data", "rphi_np_dev.data", "ovx_np_dev.data", "ovy_np_dev.data", "ovz_np_dev.data", 
+												"nvx.data", "nvy.data", "nvz.data"]
+
+		if self.wavelength_dep_scattering:
+			call_params.append("e_np_dev.data")
+
+		eval("self.cl_prog.light_scatter_step_sphere(" + ", ".join(call_params) + ")")
 
 		outx = nvx.get()
 		outy = nvy.get()
@@ -223,6 +296,20 @@ class ScatterSphericalStep(phys.Step):
 		for idx in range(0, len(outx)):
 			if not np.isnan(outx[idx]):
 				pht[idx].v = np.array([outx[idx], outy[idx], outz[idx]], dtype=np.double)
+
+	def __run_py(self, sim):
+		for obj in sim.objects:
+			if PhotonObject != type(obj):
+				continue
+			p_coll = self.n * self.A * np_lin.norm(obj.dr)
+			if self.wavelength_dep_scattering:
+				p_coll *= ((h * c) / obj.E) ** -4 # Since we already have an A_targ term in there, we merely need to adjust it.
+			p_next = np.random.random()
+			if p_coll >= p_next:
+				phi = np.random.random() * np.pi
+				theta = np.random.random() * np.pi * 2
+				obj.v = np.array([c * np.sin(theta) * np.cos(phi), c * np.sin(theta) * np.sin(phi), c * np.cos(theta)], dtype=np.double)
+
 
 	def run(self, sim):
 		"""

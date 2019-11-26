@@ -35,7 +35,7 @@ def test_scatter_spherical():
 	x.join()
 	error = (np.double(step.data[0][1] * 0.5) - (sum([y[2] for y in step.data]) / len(step.data))) / np.double(step.data[0][1] * 0.5)
 	res = np.isclose(error, 0, 0, 0.10)
-	print("Scatter spherical test error: " + error)
+	print("Scatter spherical test error: " + str(error))
 	assert res
 
 def test_scatter_delete():
@@ -55,5 +55,5 @@ def test_scatter_delete():
 	N_x = sum(step.data[2])
 	error = (np.e ** -1 - (N_x / N_i)) / (np.e ** -1)
 	res = np.isclose(error, 0, 0, 0.10)
-	print("Scatter deletion test error: " + error)
+	print("Scatter deletion test error: " + str(error))
 	assert res

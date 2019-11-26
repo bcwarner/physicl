@@ -154,6 +154,12 @@ class Simulation (threading.Thread):
 		"""
 		self.objects.append(obj)
 
+	def add_objs(self, objs):
+		"""
+		Adds a list of objects to the list of current objects in the simulation.
+		"""
+		self.objects.extend(objs)
+
 	def remove_obj(self, obj):
 		"""
 		Removes an object from this simulation.
