@@ -48,7 +48,7 @@ jobs:
           name: run tests
           command: |
             . venv/bin/activate
-            make test
+            pip3 install -e .
             cd test
             pytest 
 
