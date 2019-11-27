@@ -171,10 +171,44 @@ class Simulation (threading.Thread):
 		self.objects.remove(obj)
 
 	def remove_step(self, idx):
+		"""
+		Removes a step if the simulation is not running. Otherwise raises a RuntimeError.
+		"""
 		if self.running == False:
 			self.steps.pop(idx)
 		else:
-			raise RuntimeException("Cannot remove a Step while the simulation is running.")
+			raise RuntimeError("Cannot remove a Step while the simulation is running.")
+
+	def get_device_info():
+		"""
+		Generates a dictionary identifying each platform and all associated devices. Properties for devices are listed if the associated OpenCL feature is supported on that device. 
+		"""
+		# Iterate through each platform.
+		res = {}
+		for plat in cl.get_platforms():
+			k = plat.get_info(cl.platform_info.NAME)
+			v = {}
+			
+			# Get platform info.
+
+			for x in filter(lambda x: x.isupper(), dir(cl.platform_info)):
+				v[x] = plat.get_info(eval("cl.platform_info." + x))
+
+			# Get device info
+			for dev in plat.get_devices():
+				dk = dev.get_info(cl.device_info.NAME)
+				dv = {}
+				for x in filter(lambda x: x.isupper(), dir(cl.device_info)):
+					try:
+						dv[x] = dev.get_info(eval("cl.device_info." + x))
+					except:
+						pass # Some of these are not available with certain devices, so we ignore them.
+
+				v[dk] = dv
+
+			res[k] = v
+
+		return res
 
 	def run(self):
 		"""

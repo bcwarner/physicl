@@ -1,0 +1,344 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>phys package &#8212; physics-sim 0.0.1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <script type="text/javascript" src="_static/language_data.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="phys-package">
+<h1>phys package<a class="headerlink" href="#phys-package" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-phys.light">
+<span id="phys-light-module"></span><h2>phys.light module<a class="headerlink" href="#module-phys.light" title="Permalink to this headline">¶</a></h2>
+<dl class="function">
+<dt id="phys.light.E_from_wavelength">
+<code class="sig-prename descclassname">phys.light.</code><code class="sig-name descname">E_from_wavelength</code><span class="sig-paren">(</span><em class="sig-param">wavelength</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.E_from_wavelength" title="Permalink to this definition">¶</a></dt>
+<dd><p>Converts a wavelength in meters to E in joules.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="phys.light.PhotonObject">
+<em class="property">class </em><code class="sig-prename descclassname">phys.light.</code><code class="sig-name descname">PhotonObject</code><span class="sig-paren">(</span><em class="sig-param">attrs={}</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.PhotonObject" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#phys.Object" title="phys.Object"><code class="xref py py-class docutils literal notranslate"><span class="pre">phys.Object</span></code></a></p>
+<p>Represents a simple photon.
+Constrained to require an energy (E) and a velocity whose Euclidean norm is the speed of light.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="phys.light.ScatterDeleteStep">
+<em class="property">class </em><code class="sig-prename descclassname">phys.light.</code><code class="sig-name descname">ScatterDeleteStep</code><span class="sig-paren">(</span><em class="sig-param">n</em>, <em class="sig-param">A</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.ScatterDeleteStep" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#phys.Step" title="phys.Step"><code class="xref py py-class docutils literal notranslate"><span class="pre">phys.Step</span></code></a></p>
+<p>Step that scatters photon objects from a simulation by removing them.
+Assumes that the simulation composes the entirety of the medium and has a constant number density and cross-sectional area.</p>
+<dl class="method">
+<dt id="phys.light.ScatterDeleteStep.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.ScatterDeleteStep.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Runs this step, and will either run it in native Python or OpenCL.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="phys.light.ScatterMeasureStep">
+<em class="property">class </em><code class="sig-prename descclassname">phys.light.</code><code class="sig-name descname">ScatterMeasureStep</code><span class="sig-paren">(</span><em class="sig-param">out_fn</em>, <em class="sig-param">measure_n=True</em>, <em class="sig-param">measure_locs=[]</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.ScatterMeasureStep" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#phys.MeasureStep" title="phys.MeasureStep"><code class="xref py py-class docutils literal notranslate"><span class="pre">phys.MeasureStep</span></code></a></p>
+<p>Measures the number of photons that cross through a series of planes. 
+Each plane should be defined with a 3D numpy double array, with the coordinates not defining the location of the plane set to numpy.nan.</p>
+<dl class="method">
+<dt id="phys.light.ScatterMeasureStep.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.ScatterMeasureStep.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Measures some aspect of the simulation at this step.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="phys.light.ScatterSignMeasureStep">
+<em class="property">class </em><code class="sig-prename descclassname">phys.light.</code><code class="sig-name descname">ScatterSignMeasureStep</code><span class="sig-paren">(</span><em class="sig-param">out_fn</em>, <em class="sig-param">measure_n=True</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.ScatterSignMeasureStep" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#phys.MeasureStep" title="phys.MeasureStep"><code class="xref py py-class docutils literal notranslate"><span class="pre">phys.MeasureStep</span></code></a></p>
+<p>Measures the number of objects with a strictly positive coordinate at each step with regards to x, y, and z coordinates.</p>
+<dl class="method">
+<dt id="phys.light.ScatterSignMeasureStep.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.ScatterSignMeasureStep.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Measures some aspect of the simulation at this step.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="phys.light.ScatterSphericalStep">
+<em class="property">class </em><code class="sig-prename descclassname">phys.light.</code><code class="sig-name descname">ScatterSphericalStep</code><span class="sig-paren">(</span><em class="sig-param">n</em>, <em class="sig-param">A</em>, <em class="sig-param">wavelength_dep_scattering=False</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.ScatterSphericalStep" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#phys.Step" title="phys.Step"><code class="xref py py-class docutils literal notranslate"><span class="pre">phys.Step</span></code></a></p>
+<p>Step that scatters photons spherically, according to a defined number density (n) and a defined cross-sectional area (A).</p>
+<p>If the optional param wavelength_dep_scattering is set to True, then the probability of scattering will then be proportional to ((h * c) / E_wave)^-4 (i.e. divide by the wavelength to the power of 4)</p>
+<dl class="method">
+<dt id="phys.light.ScatterSphericalStep.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.ScatterSphericalStep.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Runs the simulation either in native Python or in OpenCL</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="phys.light.TracePathMeasureStep">
+<em class="property">class </em><code class="sig-prename descclassname">phys.light.</code><code class="sig-name descname">TracePathMeasureStep</code><span class="sig-paren">(</span><em class="sig-param">out_fn</em>, <em class="sig-param">trace_type=&lt;class 'phys.Object'&gt;</em>, <em class="sig-param">id_info_fn=&lt;function TracePathMeasureStep.&lt;lambda&gt;&gt;</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.TracePathMeasureStep" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#phys.MeasureStep" title="phys.MeasureStep"><code class="xref py py-class docutils literal notranslate"><span class="pre">phys.MeasureStep</span></code></a></p>
+<p>Traces the path of object. If the object does not exist at any point, then the value ‘nan;nan;nan’ is traced. Otherwise the current coordinates are printed as a string.</p>
+<dl class="method">
+<dt id="phys.light.TracePathMeasureStep.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.TracePathMeasureStep.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Measures some aspect of the simulation at this step.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="phys.light.TracePathMeasureStep.terminate">
+<code class="sig-name descname">terminate</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.TracePathMeasureStep.terminate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Turns the data collected into a 2D matrix of coordinate vectors. The first row will be the recorded times (useful if we write the data to a CSV).</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="function">
+<dt id="phys.light.generate_photons">
+<code class="sig-prename descclassname">phys.light.</code><code class="sig-name descname">generate_photons</code><span class="sig-paren">(</span><em class="sig-param">n, bins=100, dist='gauss', min=0, max=1, dir=[299792458.0, 0, 0]</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.light.generate_photons" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generates a collection of rays according to a distribution. Works as follows:
+1. Generates a distribution of E according to dist.
+2. Multiplies the quantity of rays desired per bin by the resulting distribution, then generates that number of rays per bin. This number is floored.
+3. Returns a list of the generated rays.</p>
+<p>Acceptable distributions: 
+- const: Generates n photons for each bin of photons.
+- gauss: Generates up to n photons for each bin of photons according to the Gaussian distribution centered around the average of the two.
+- loglin: Generates a distribution of photons such that the log of n is directly proportional to the log of the wavelength.</p>
+</dd></dl>
+
+</div>
+<div class="section" id="module-phys.newton">
+<span id="phys-newton-module"></span><h2>phys.newton module<a class="headerlink" href="#module-phys.newton" title="Permalink to this headline">¶</a></h2>
+<dl class="class">
+<dt id="phys.newton.NewtonianKinematicsStep">
+<em class="property">class </em><code class="sig-prename descclassname">phys.newton.</code><code class="sig-name descname">NewtonianKinematicsStep</code><a class="headerlink" href="#phys.newton.NewtonianKinematicsStep" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#phys.Step" title="phys.Step"><code class="xref py py-class docutils literal notranslate"><span class="pre">phys.Step</span></code></a></p>
+<p>Moves all objects according to Newtonian kinematics.</p>
+<dl class="method">
+<dt id="phys.newton.NewtonianKinematicsStep.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.newton.NewtonianKinematicsStep.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Runs this step in native Python, updating each object’s position (r) and change in position (dr)</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-phys">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-phys" title="Permalink to this headline">¶</a></h2>
+<dl class="class">
+<dt id="phys.MeasureStep">
+<em class="property">class </em><code class="sig-prename descclassname">phys.</code><code class="sig-name descname">MeasureStep</code><span class="sig-paren">(</span><em class="sig-param">out_fn=None</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.MeasureStep" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#phys.Step" title="phys.Step"><code class="xref py py-class docutils literal notranslate"><span class="pre">phys.Step</span></code></a></p>
+<dl class="method">
+<dt id="phys.MeasureStep.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.MeasureStep.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Measures some aspect of the simulation at this step.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="phys.MeasureStep.terminate">
+<code class="sig-name descname">terminate</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.MeasureStep.terminate" title="Permalink to this definition">¶</a></dt>
+<dd><p>If there is an output file, saves to that. Otherwise does nothing.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="phys.Object">
+<em class="property">class </em><code class="sig-prename descclassname">phys.</code><code class="sig-name descname">Object</code><span class="sig-paren">(</span><em class="sig-param">attrs={}</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.Object" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Represents a generic object in the simulation. Inheriting subclasses will add defining features.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="phys.Simulation">
+<em class="property">class </em><code class="sig-prename descclassname">phys.</code><code class="sig-name descname">Simulation</code><span class="sig-paren">(</span><em class="sig-param">params={}</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.Simulation" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">threading.Thread</span></code></p>
+<p>Represents a simulation that runs on a separate thread. Contains a number of attributes, holds objects, and applies steps in the order they are given.
+Must be started using start().</p>
+<dl class="method">
+<dt id="phys.Simulation.add_obj">
+<code class="sig-name descname">add_obj</code><span class="sig-paren">(</span><em class="sig-param">obj</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.Simulation.add_obj" title="Permalink to this definition">¶</a></dt>
+<dd><p>Adds an object to the list of current objects in the simulation.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="phys.Simulation.add_objs">
+<code class="sig-name descname">add_objs</code><span class="sig-paren">(</span><em class="sig-param">objs</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.Simulation.add_objs" title="Permalink to this definition">¶</a></dt>
+<dd><p>Adds a list of objects to the list of current objects in the simulation.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="phys.Simulation.add_step">
+<code class="sig-name descname">add_step</code><span class="sig-paren">(</span><em class="sig-param">idx</em>, <em class="sig-param">step</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.Simulation.add_step" title="Permalink to this definition">¶</a></dt>
+<dd><p>Adds a new step to the simulation. Index must be unique.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="phys.Simulation.get_device_info">
+<code class="sig-name descname">get_device_info</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#phys.Simulation.get_device_info" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generates a dictionary identifying each platform and all associated devices. Properties for devices are listed if the associated OpenCL feature is supported on that device.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="phys.Simulation.get_state">
+<code class="sig-name descname">get_state</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#phys.Simulation.get_state" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the current state of the simulation. Locks if the user states the simulation should lock before getting the state.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="phys.Simulation.remove_obj">
+<code class="sig-name descname">remove_obj</code><span class="sig-paren">(</span><em class="sig-param">obj</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.Simulation.remove_obj" title="Permalink to this definition">¶</a></dt>
+<dd><p>Removes an object from this simulation.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="phys.Simulation.remove_step">
+<code class="sig-name descname">remove_step</code><span class="sig-paren">(</span><em class="sig-param">idx</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.Simulation.remove_step" title="Permalink to this definition">¶</a></dt>
+<dd><p>Removes a step if the simulation is not running. Otherwise raises a RuntimeError.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="phys.Simulation.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#phys.Simulation.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Runs the simulation using threading as defined by threading.Thread.
+Sets t, dt = 0, repeatedly iterates through each step of the simulation until the exit condition is met.
+Then calls each step’s terminate function and stops.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="phys.Simulation.set_dev">
+<code class="sig-name descname">set_dev</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#phys.Simulation.set_dev" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sets the environment variable PYOPENCL_CTX to the string id so that OpenCL will default to the device with that corresponding id.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="phys.Step">
+<em class="property">class </em><code class="sig-prename descclassname">phys.</code><code class="sig-name descname">Step</code><a class="headerlink" href="#phys.Step" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="method">
+<dt id="phys.Step.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.Step.run" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="phys.Step.terminate">
+<code class="sig-name descname">terminate</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.Step.terminate" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="phys.UpdateTimeStep">
+<em class="property">class </em><code class="sig-prename descclassname">phys.</code><code class="sig-name descname">UpdateTimeStep</code><span class="sig-paren">(</span><em class="sig-param">fn</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.UpdateTimeStep" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#phys.Step" title="phys.Step"><code class="xref py py-class docutils literal notranslate"><span class="pre">phys.Step</span></code></a></p>
+<p>Basic class for updating the time step. Does this according to a function that is passed when this step is initialized.</p>
+<dl class="method">
+<dt id="phys.UpdateTimeStep.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">sim</em><span class="sig-paren">)</span><a class="headerlink" href="#phys.UpdateTimeStep.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called when the simulation is run to update it’s current time and change in time.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">physics-sim</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2019, Ben Warner.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/phys.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

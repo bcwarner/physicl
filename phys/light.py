@@ -414,7 +414,7 @@ class TracePathMeasureStep(phys.MeasureStep):
 
 	def terminate(self, sim):
 		"""
-		Turns the data collected into a 2D matrix of coordinate strings.
+		Turns the data collected into a 2D matrix of coordinate vectors. The first row will be the recorded times (useful if we write the data to a CSV).
 		"""
 		# Prettified data 
 		# Cols: t, Rows: items
@@ -426,9 +426,9 @@ class TracePathMeasureStep(phys.MeasureStep):
 			n = [self.id_dict[i]]
 			b = sim.ts.index(self.pos_dict[i]["start"])
 			a = cols - len(self.pos_dict[i]["pos"])
-			n.extend(["nan;nan;nan"] * b) # Fill with nans before the data. Test this.
-			n.extend([str(x[0]) + ";" + str(x[1]) + ";" + str(x[2]) for x in self.pos_dict[i]["pos"]]) # Add the main data
-			n.extend(["nan;nan;nan"] * a)
+			n.extend([np.nan, np.nan, np.nan] * b) # Fill with nans before the data. Test this.
+			n.extend([x for x in self.pos_dict[i]["pos"]]) # Add the main data
+			n.extend([np.nan, np.nan, np.nan] * a)
 			dat_clean.append(n)
 		self.data = dat_clean
 
