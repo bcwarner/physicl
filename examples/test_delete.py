@@ -16,7 +16,7 @@ sim.add_objs(phys.light.generate_photons(1000, bins=100, dist="gauss", min=phys.
 
 sim.add_step(0, phys.UpdateTimeStep(lambda s: np.double(0.001)))
 sim.add_step(1, phys.newton.NewtonianKinematicsStep())
-sim.add_step(2, phys.light.ScatterSphericalStep(np.double(0.001), np.double(0.001), wavelength_dep_scattering = True))
+sim.add_step(2, phys.light.ScatterDeleteStep(np.double(0.001), np.double(0.001)))
 m1 = phys.light.ScatterMeasureStep("data_.csv", True, [np.array([0, np.nan, np.nan], dtype=np.double)])
 sim.add_step(3, m1)
 m2 = phys.light.ScatterSignMeasureStep("data_2.csv", True)

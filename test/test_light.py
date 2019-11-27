@@ -24,6 +24,9 @@ def sim():
 	return s
 
 def test_scatter_spherical():
+	"""
+	Tests that spherical scattering has the property of having equal proportions of positive and negative coordinates along the x-axis.
+	"""
 	x = sim()
 	x.add_step(0, phys.UpdateTimeStep(lambda s: np.double(0.001)))
 	x.add_step(1, phys.newton.NewtonianKinematicsStep())
@@ -39,6 +42,9 @@ def test_scatter_spherical():
 	assert res
 
 def test_scatter_delete():
+	"""
+	Tests that deletion scattering has the property of being proportional to e ^ -1 at (n * A) ^ -1
+	"""
 	x = sim()
 	x.exit = lambda x: len(x.objects) == 0
 	N_i = len(x.objects)

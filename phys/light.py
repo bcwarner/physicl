@@ -48,7 +48,10 @@ def generate_photons(n, bins=100, dist="gauss", min=0, max=1, dir=[c, 0, 0]):
 	2. Multiplies the quantity of rays desired per bin by the resulting distribution, then generates that number of rays per bin. This number is floored.
 	3. Returns a list of the generated rays.
 
-	Acceptable distributions: constant, loglin, gauss
+	Acceptable distributions: 
+	- const: Generates n photons for each bin of photons.
+	- gauss: Generates up to n photons for each bin of photons according to the Gaussian distribution centered around the average of the two.
+	- loglin: Generates a distribution of photons such that the log of n is directly proportional to the log of the wavelength.
 	"""
 	# log N = log lambda
 	# lambda = hc/E
@@ -170,8 +173,10 @@ class ScatterDeleteStep(phys.Step):
 class ScatterSphericalStep(phys.Step):
 	"""
 	Step that scatters photons spherically, according to a defined number density (n) and a defined cross-sectional area (A).
+	
+	If the optional param wavelength_dep_scattering is set to True, then the probability of scattering will then be proportional to ((h * c) / E_wave)^-4 (i.e. divide by the wavelength to the power of 4)
 	"""
-	# Append order:
+	# Internal construction order:
 	# 1. Default params.
 	# 2. Wavelength dependent scattering.
 
@@ -381,3 +386,26 @@ class ScatterSignMeasureStep(phys.MeasureStep):
 		out.append(zp)
 
 		self.data.append(np.array(out))
+
+class TracePathMeasureStep(phys.MeasureStep):
+	"""
+	Traces the path of object. if 
+	"""
+
+	def __init__(self, out_fn, trace_type = phys.Object, id_info_fn = lambda x: str(type(x))):
+		super().__init__(out_fn)
+		self.trace_type = trace_type
+		self.id_info_fn = id_info_fn
+		self.id_counter = 0
+
+	def run(self, sim):
+		out = [sim.t]
+		for obj in sim.objects:
+			#if type(obj) != self.trace_type:
+			#	continue
+			if "__trace_path_id" not in dir(obj):
+				obj.__setattr__("__trace_path_id", self.id_counter)
+				self.id_counter += 1
+			lout = [obj.__trace_path_id, np.array([obj.r[0], obj.r[1], obj.r[2]], dtype=np.double)]
+		data.append(out)
+

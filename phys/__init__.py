@@ -166,6 +166,12 @@ class Simulation (threading.Thread):
 		"""
 		self.objects.remove(obj)
 
+	def remove_step(self, idx):
+		if self.running == False:
+			self.steps.pop(idx)
+		else:
+			raise RuntimeException("Cannot remove a Step while the simulation is running.")
+
 	def run(self):
 		"""
 		Runs the simulation using threading as defined by threading.Thread.
