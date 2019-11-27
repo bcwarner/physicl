@@ -4,7 +4,7 @@ import pyopencl.array as cl_array
 import numpy.linalg as np_lin
 import numpy as np
 import scipy.stats as st
-
+import copy
 
 
 """
@@ -389,7 +389,7 @@ class ScatterSignMeasureStep(phys.MeasureStep):
 
 class TracePathMeasureStep(phys.MeasureStep):
 	"""
-	Traces the path of object. if 
+	Traces the path of object. If the object does not exist at any point, then the value 'nan;nan;nan' is traced. Otherwise the current coordinates are printed as a string.
 	"""
 
 	def __init__(self, out_fn, trace_type = phys.Object, id_info_fn = lambda x: str(type(x))):
@@ -397,15 +397,38 @@ class TracePathMeasureStep(phys.MeasureStep):
 		self.trace_type = trace_type
 		self.id_info_fn = id_info_fn
 		self.id_counter = 0
+		self.id_dict = {}
+		self.pos_dict = {}
 
 	def run(self, sim):
-		out = [sim.t]
 		for obj in sim.objects:
 			#if type(obj) != self.trace_type:
 			#	continue
 			if "__trace_path_id" not in dir(obj):
 				obj.__setattr__("__trace_path_id", self.id_counter)
+				self.id_dict[self.id_counter] = self.id_info_fn(obj)
+				self.pos_dict[self.id_counter] = {"start": sim.t, "pos": []}
 				self.id_counter += 1
-			lout = [obj.__trace_path_id, np.array([obj.r[0], obj.r[1], obj.r[2]], dtype=np.double)]
-		data.append(out)
+			self.pos_dict[obj.__getattribute__("__trace_path_id")]["pos"].append(np.array([obj.r[0], obj.r[1], obj.r[2]], dtype=np.double))
+			# Append each object to outpu
+
+	def terminate(self, sim):
+		"""
+		Turns the data collected into a 2D matrix of coordinate strings.
+		"""
+		# Prettified data 
+		# Cols: t, Rows: items
+		rows = len(self.id_dict.keys())
+		cols = len(sim.ts)
+		dat_clean = []
+		dat_clean.append(["t"] + copy.deepcopy(sim.ts))
+		for i in range(0, rows):
+			n = [self.id_dict[i]]
+			b = sim.ts.index(self.pos_dict[i]["start"])
+			a = cols - len(self.pos_dict[i]["pos"])
+			n.extend(["nan;nan;nan"] * b) # Fill with nans before the data. Test this.
+			n.extend([str(x[0]) + ";" + str(x[1]) + ";" + str(x[2]) for x in self.pos_dict[i]["pos"]]) # Add the main data
+			n.extend(["nan;nan;nan"] * a)
+			dat_clean.append(n)
+		self.data = dat_clean
 

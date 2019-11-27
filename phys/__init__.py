@@ -80,8 +80,12 @@ class MeasureStep(Step):
 		while True:
 			try:
 				with open(self.out_fn, "w") as f:
-					for x in self.data:
-						f.write(", ".join([str(i) for i in list(x)]) + "\n")
+					if type(self.data) == list:
+						for x in self.data:
+							f.write(", ".join([str(i) for i in list(x)]) + "\n")
+					elif type(self.data) == dict:
+						for k, v in self.data:
+							f.write(", ".join([str(i) for i in list(v)]) + "\n")
 				break
 			except:
 				input("Error saving to '" + self.out_fn + "'. Hit any key to try again.")
@@ -196,6 +200,12 @@ class Simulation (threading.Thread):
 		self.run_time = time.time() - self.start_time
 		self.running = False
 		self.__state_lock.release()
+
+	def set_dev(id):
+		"""
+		Sets the environment variable PYOPENCL_CTX to the string id so that OpenCL will default to the device with that corresponding id.
+		"""
+
 
 	def get_state(self):
 		"""
