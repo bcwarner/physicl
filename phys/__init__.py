@@ -102,6 +102,7 @@ class Object:
 		"""
 		self.r = np.array([0] * 3, dtype=np.double)
 		self.dr = np.array([0] * 3, dtype=np.double) # change since last step
+		self.dv = np.array([0] * 3, dtype=np.double) # change since last step
 		self.v = np.array([0] * 3, dtype=np.double)
 		self.a = np.array([0] * 3, dtype=np.double)
 		for attr, val in attrs.items():

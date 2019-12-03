@@ -40,18 +40,16 @@ def E_from_wavelength(wavelength):
 	"""
 	return (h * c) / wavelength
 
-
-def generate_photons(n, bins=100, dist="gauss", min=0, max=1, dir=[c, 0, 0]):
+def wavelength_from_E(E):
 	"""
-	Generates a collection of rays according to a distribution. Works as follows:
-	1. Generates a distribution of E according to dist.
-	2. Multiplies the quantity of rays desired per bin by the resulting distribution, then generates that number of rays per bin. This number is floored.
-	3. Returns a list of the generated rays.
+	Converts a photon energy in joules to a wavelength in meters.
+	"""
+	return (h * c) / E
 
-	Acceptable distributions: 
-	- const: Generates n photons for each bin of photons.
-	- gauss: Generates up to n photons for each bin of photons according to the Gaussian distribution centered around the average of the two.
-	- loglin: Generates a distribution of photons such that the log of n is directly proportional to the log of the wavelength.
+
+def generate_photons(n, fn=lambda: np.random.power(3), min=0, max=0, bins=-1):
+	"""
+	Generates a collection of rays according to a distribution. Works by taking n samples of fn and then using min + (max - min) * fn() to generate the photon. By default this is numpy's power distribution.
 	"""
 	# log N = log lambda
 	# lambda = hc/E
@@ -61,18 +59,10 @@ def generate_photons(n, bins=100, dist="gauss", min=0, max=1, dir=[c, 0, 0]):
 	# fn: x is position in dist => dist count less-than-equal-to-1
 	# min_fn x is miniumum => min in distribution generator
 	# max_fn analagous to min_fn 
-	dist_tab = {"gauss" : {"fn": lambda x: st.norm.pdf(x), "min_fn": lambda x: st.norm.ppf(0.001), "max_fn": lambda x: st.norm.ppf(0.999)},
-				"constant": {"fn": lambda x: np.array([1] * len(x)), "min_fn": lambda x: min, "max_fn": lambda x:  max},
-				"loglin": {"fn": lambda x: ((h * c) / x) ** -0.1, "min_fn": lambda x: min, "max_fn": lambda x: max}} # Change this constant of proportionality.
-
-	dx = np.linspace(dist_tab[dist]["min_fn"](min), dist_tab[dist]["max_fn"](max), bins) # The distribution space.
-	Ex = np.linspace(min, max, bins) # Linear energy distribution
-	dcount = dist_tab[dist]["fn"](dx) * n # Distribution count for each bin.
 	out = []
-	for idx, x in enumerate(dcount):
-		for i in range(int(np.floor(dcount[idx]))): # Generate dcount[idx] photons with Ex[idx] energy each.
-			out.append(PhotonObject({"v": dir, "E": Ex[idx]})) 
-
+	for i in range(n):
+		E = min + (max - min) * fn()
+		out.append(PhotonObject({"E": E, "v": np.array([c, 0, 0])}))
 	return out
 
 
@@ -300,7 +290,11 @@ class ScatterSphericalStep(phys.Step):
 		# Set the velocity for each photon.
 		for idx in range(0, len(outx)):
 			if not np.isnan(outx[idx]):
+				vold = pht[idx].v
 				pht[idx].v = np.array([outx[idx], outy[idx], outz[idx]], dtype=np.double)
+				pht[idx].dv = pht[idx].v - vold
+			else:
+				pht[idx].dv = np.array([0, 0, 0], dtype=np.double)
 
 	def __run_py(self, sim):
 		for obj in sim.objects:
@@ -313,8 +307,11 @@ class ScatterSphericalStep(phys.Step):
 			if p_coll >= p_next:
 				phi = np.random.random() * np.pi
 				theta = np.random.random() * np.pi * 2
+				vold = obj.v
 				obj.v = np.array([c * np.sin(theta) * np.cos(phi), c * np.sin(theta) * np.sin(phi), c * np.cos(theta)], dtype=np.double)
-
+				obj.dv = vold
+			else:
+				obj.dv = np.array([0,0,0])
 
 	def run(self, sim):
 		"""
@@ -392,13 +389,14 @@ class TracePathMeasureStep(phys.MeasureStep):
 	Traces the path of object. If the object does not exist at any point, then the value 'nan;nan;nan' is traced. Otherwise the current coordinates are printed as a string.
 	"""
 
-	def __init__(self, out_fn, trace_type = phys.Object, id_info_fn = lambda x: str(type(x))):
+	def __init__(self, out_fn, trace_type = phys.Object, id_info_fn = lambda x: str(type(x)), trace_dv=False):
 		super().__init__(out_fn)
 		self.trace_type = trace_type
 		self.id_info_fn = id_info_fn
 		self.id_counter = 0
 		self.id_dict = {}
 		self.pos_dict = {}
+		self.trace_dv = trace_dv
 
 	def run(self, sim):
 		for obj in sim.objects:
@@ -408,8 +406,12 @@ class TracePathMeasureStep(phys.MeasureStep):
 				obj.__setattr__("__trace_path_id", self.id_counter)
 				self.id_dict[self.id_counter] = self.id_info_fn(obj)
 				self.pos_dict[self.id_counter] = {"start": sim.t, "pos": []}
+				if self.trace_dv:
+					self.pos_dict[self.id_counter]["freq"] = 0
 				self.id_counter += 1
 			self.pos_dict[obj.__getattribute__("__trace_path_id")]["pos"].append(np.array([obj.r[0], obj.r[1], obj.r[2]], dtype=np.double))
+			if self.trace_dv and not np.array_equal(obj.dv, np.array([0,0,0])):
+				self.pos_dict[obj.__getattribute__("__trace_path_id")]["freq"] += 1
 			# Append each object to outpu
 
 	def terminate(self, sim):
@@ -424,6 +426,8 @@ class TracePathMeasureStep(phys.MeasureStep):
 		dat_clean.append(["t"] + copy.deepcopy(sim.ts))
 		for i in range(0, rows):
 			n = [self.id_dict[i]]
+			if self.trace_dv:
+				n.append(self.pos_dict[i]["freq"])
 			b = sim.ts.index(self.pos_dict[i]["start"])
 			a = cols - len(self.pos_dict[i]["pos"])
 			n.extend([np.nan, np.nan, np.nan] * b) # Fill with nans before the data. Test this.
