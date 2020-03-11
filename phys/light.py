@@ -4,6 +4,7 @@ import pyopencl.array as cl_array
 import numpy.linalg as np_lin
 import numpy as np
 import scipy.stats as st
+import scipy.integrate
 import copy
 
 
@@ -12,6 +13,7 @@ SI definition for speed of light
 """
 c = np.double(299792458) # Defined here: https://www.bipm.org/en/CGPM/db/17/1/
 h = np.double(6.62607015e-34) # Defined here: https://www.bipm.org/utils/common/pdf/CGPM-2018/26th-CGPM-Resolutions.pdf
+kB = np.double(1.380649e-23) # Boltzmann constant, defined here: https://www.bipm.org/utils/common/pdf/si-brochure/SI-Brochure-9.pdf
 
 class PhotonObject(phys.Object):
 	"""
@@ -46,6 +48,61 @@ def wavelength_from_E(E):
 	"""
 	return (h * c) / E
 
+
+def planck_distribution(E, T):
+	coef1 = 15 / (np.pi ** 4 * kB * T)
+	coef2 = E / (kB * T)
+	coef3 = 1 / (np.e ** (E / (kB * T)))
+	return coef1 * (coef2 ** 3) * coef3
+
+# Do we care about error?
+def planck_probability(E_min, E_max, T, integrator=lambda fn, a, b: scipy.integrate.quad(fn, a, b)):
+	return integrator(lambda x: planck_distribution(x, T), E_min, E_max)
+
+# Use dynamic programming here.
+last_planck_params = None
+last_planck_gamma_norm = None
+last_planck_cdf = None
+
+# Tie number of bins to number of photons. This will give us more statistically significant results.
+
+def planck_phot_distribution(E_min, E_max, T, bins=1000):
+	# Generate the bins.
+	global last_planck_params
+	global last_planck_gamma_norm
+	global last_planck_cdf
+	params = [E_min, E_max, T, bins]
+	gamma_norm = []
+	gamma_cdf = []
+	E = np.linspace(E_min, E_max, bins)
+	if last_planck_params != params:
+		gamma = []
+		for x in range(len(E) - 1):
+			gamma.append(planck_probability(E[x], E[x + 1], T)[0])
+		# Sum and normalize each bin
+		tot_area = sum(gamma)
+		gamma_norm = [x / tot_area for x in gamma]
+		# Pick a random position along the curve.
+		gamma_cdf = [gamma_norm[0]]
+		for x in range(1, len(gamma_norm)):
+			gamma_cdf.append(gamma_cdf[-1] + gamma_norm[x])
+		last_planck_params = params
+		last_planck_gamma_norm = gamma_norm
+		last_planck_cdf = gamma_cdf
+	else:
+		gamma_norm = last_planck_gamma_norm
+		gamma_cdf = last_planck_cdf
+
+	rand = np.random.rand()
+	for x in range(1, len(gamma_cdf)):
+		if gamma_cdf[x] >= rand and rand >= gamma_cdf[x - 1]:
+			return E[x]
+	return planck_phot_distribution(E_min, E_max, T, bins) # unsuccessful attempt, try again
+	# Return the normalized proportion (generate_photons requires a proportion)
+
+
+def generate_photons_from_E(E):
+	return [PhotonObject({"E": x, "v": np.array([c, 0, 0])}) for x in E]
 
 def generate_photons(n, fn=lambda: np.random.power(3), min=0, max=0, bins=-1):
 	"""
@@ -170,12 +227,14 @@ class ScatterSphericalStep(phys.Step):
 	# 1. Default params.
 	# 2. Wavelength dependent scattering.
 
-	def __init__(self, n, A, wavelength_dep_scattering = False):
+	def __init__(self, n, A, wavelength_dep_scattering = False, variable_n=False, variable_n_fn=None):
 		self.n = n 
 		self.A = A
 		self.cl_prog = None
 		self.compiled = False
 		self.wavelength_dep_scattering = wavelength_dep_scattering
+		self.variable_n = variable_n
+		self.variable_n_fn = variable_n_fn
 
 
 	def __compile_cl__(self, sim):
@@ -187,8 +246,10 @@ class ScatterSphericalStep(phys.Step):
 											"__global double *nvx", "__global double *nvy", "__global double *nvz"]
 		if self.wavelength_dep_scattering == True:
 			params.extend(["__global double *E"])
+		if self.variable_n == True:
+			params.extend(["__global double *" + p for p in ["x", "y", "z"]])
 
-		pcoll_vars = ["A", "n", "norm"]
+		pcoll_vars = ["A", "n" if self.variable_n == False else "(" + self.variable_n_fn + ")", "norm"]
 		if self.wavelength_dep_scattering == True:
  			pcoll_vars.append("pow((" + str(h).upper() + " * " + str(c) + ") / E[gid], -4)")
 		kernel_sph = """
@@ -230,6 +291,9 @@ class ScatterSphericalStep(phys.Step):
 		rand = []
 		pht = []
 		Es = [] # 
+		x = []
+		y = []
+		z = []
 		for obj in sim.objects:
 			if PhotonObject != type(obj):
 				continue
@@ -245,6 +309,10 @@ class ScatterSphericalStep(phys.Step):
 			pht.append(obj)
 			if self.wavelength_dep_scattering:
 				Es.append(obj.E)
+			if self.variable_n:
+				x.append(obj.r[0])
+				y.append(obj.r[1])
+				z.append(obj.r[2])
 
 		dx_np = np.array(dx, dtype=np.double)
 		dy_np = np.array(dy, dtype=np.double)
@@ -257,6 +325,10 @@ class ScatterSphericalStep(phys.Step):
 		ovz_np = np.array(ovz, dtype=np.double)
 		if self.wavelength_dep_scattering:
 			e_np = np.array(Es, dtype=np.double)
+		if self.variable_n:
+			x_np = np.array(x, dtype=np.double)
+			y_np = np.array(x, dtype=np.double)
+			z_np = np.array(x, dtype=np.double)
 
 		dx_np_dev = cl_array.to_device(sim.cl_q, dx_np)
 		dy_np_dev = cl_array.to_device(sim.cl_q, dy_np)
@@ -269,6 +341,11 @@ class ScatterSphericalStep(phys.Step):
 		ovz_np_dev = cl_array.to_device(sim.cl_q, ovz_np)
 		if self.wavelength_dep_scattering:
 			e_np_dev = cl_array.to_device(sim.cl_q, e_np)
+		if self.variable_n:
+			x_np_dev = cl_array.to_device(sim.cl_q, x_np)
+			y_np_dev = cl_array.to_device(sim.cl_q, y_np)
+			z_np_dev = cl_array.to_device(sim.cl_q, z_np)
+
 
 		nvx = cl_array.empty(sim.cl_q, ovx_np.shape, dtype=np.double)
 		nvy = cl_array.empty(sim.cl_q, ovx_np.shape, dtype=np.double)
@@ -280,6 +357,9 @@ class ScatterSphericalStep(phys.Step):
 
 		if self.wavelength_dep_scattering:
 			call_params.append("e_np_dev.data")
+
+		if self.variable_n:
+			call_params.extend([p + "_np_dev.data" for p in ["x", "y", "z"]])
 
 		eval("self.cl_prog.light_scatter_step_sphere(" + ", ".join(call_params) + ")")
 
@@ -296,6 +376,7 @@ class ScatterSphericalStep(phys.Step):
 			else:
 				pht[idx].dv = np.array([0, 0, 0], dtype=np.double)
 
+	# Note: this does not support variable n scattering.
 	def __run_py(self, sim):
 		for obj in sim.objects:
 			if PhotonObject != type(obj):
@@ -327,11 +408,11 @@ class ScatterMeasureStep(phys.MeasureStep):
 	Measures the number of photons that cross through a series of planes. 
 	Each plane should be defined with a 3D numpy double array, with the coordinates not defining the location of the plane set to numpy.nan.
 	"""
-	def __init__(self, out_fn, measure_n=True, measure_locs=[]):
+	def __init__(self, out_fn, measure_n=True, measure_locs=[], measure_E = False):
 		super().__init__(out_fn)
 		self.measure_locs = measure_locs
 		self.measure_n = measure_n
-
+		self.measure_E = measure_E
 	"""
 	Runs this step and records how many photons passed through this plane based upon the current location and previous location.
 	""" 
@@ -341,19 +422,29 @@ class ScatterMeasureStep(phys.MeasureStep):
 			out.append(len(sim.objects))
 		for loc in self.measure_locs:
 			nl = 0
+			if self.measure_E:
+				Es = []
 			for obj in sim.objects:
 				# Figure out how to do this efficiently.
+				# Could we do this by seeing the plane equation swap signs?
 				if not np.isnan(loc[0]):
-					if (obj.r[0] - obj.dr[0] <= loc[0] and loc[0] <= obj.r[0]) or (obj.r[0] - obj.dr[0] >= loc[0] and loc[0] >= obj.dr[0]):
+					if (obj.r[0] - obj.dr[0] <= loc[0] and loc[0] <= obj.r[0]) or (obj.r[0] - obj.dr[0] >= loc[0] and loc[0] >= obj.r[0]):
 						nl += 1
+						if self.measure_E:
+							Es.append(obj.E)
 				elif not np.isnan(loc[1]):
-					if (obj.r[1] - obj.dr[1] <= loc[1] and loc[1] <= obj.r[1]) or (obj.r[1] - obj.dr[1] >= loc[1] and loc[1] >= obj.dr[1]):
+					if (obj.r[1] - obj.dr[1] <= loc[1] and loc[1] <= obj.r[1]) or (obj.r[1] - obj.dr[1] >= loc[1] and loc[1] >= obj.r[1]):
 						nl += 1
+						if self.measure_E:
+							Es.append(obj.E)
 				else:
-					if (obj.r[2] - obj.dr[2] <= loc[2] and loc[2] <= obj.r[2]) or (obj.r[2] - obj.dr[2] >= loc[2] and loc[2] >= obj.dr[2]):
+					if (obj.r[2] - obj.dr[2] <= loc[2] and loc[2] <= obj.r[2]) or (obj.r[2] - obj.dr[2] >= loc[2] and loc[2] >= obj.r[2]):
 						nl += 1
+						if self.measure_E:
+							Es.append(obj.E)
 			out.append(nl)
-
+			if self.measure_E:
+				out.append(Es)
 
 		self.data.append(np.array(out))
 

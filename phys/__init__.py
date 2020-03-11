@@ -2,6 +2,81 @@ import numpy as np
 import pyopencl as cl
 import time 
 import threading
+import re
+
+class Measurement:
+	# Dictionary of tuples 
+	
+	# https://www.bipm.org/en/measurement-units/
+	# How do SI units translate to code units? abbrev => code unit, scale (CASE SENSITIVE)
+	code_scale = {"s": [("T", 1, 1)],
+					"m": [("L", 1, 1)],
+					"kg": [("M", 1, 1)],
+					"A": [("I", 1, 1)],
+					"K": [("Th", 1, 1)],
+					"mol": [("N", 1, 1)],
+					"cd": [("J", 1, 1)]
+					}
+
+	unit_scale = {	# Time Units
+					"s": [("s", 1, 1)],
+
+					# Length units
+					"m": [("m", 1, 1)],
+
+					# Mass units
+					"kg": [("kg", 1, 1)],
+
+					# Electrical units
+					"A": [("A", 1, 1)],
+
+					# Heat units
+					"K": [("K", 1, 1)],
+
+					# Substance units
+					"mol": [("mol", 1, 1)],
+
+					# Luminance units
+					"cd": [("cd", 1, 1)],
+					
+
+					# Other derived units
+
+					# How are we gonna do this?
+					}
+
+	unit_match = re.compile("""((?P<u>[a-zA-Z]*)(\*\*|\^)(?P<p>-?\d*))""")
+
+	# Return new unit, new scaling factor.
+	# Question: fractional dimensions?
+	def __intermediate_to_base(unit, power):
+		return (Measurement.unit_scale[unit][0], Measurement.unit_scale[unit][1] ** power)
+
+	# Return new unit, new scaling factor.
+	def __base_to_code(unit, power):
+		return (Measurement.code_scale[unit][0], Measurement.code_scale[unit][1] ** power) 
+
+	def set_code_scale():
+		pass
+
+	def __init__(self, raw_value, units):
+		# Convert raw units to code units. Calculate new scale.
+		self.scale = np.double(1)
+
+		units_raw = Measurement.unit_match.findall(units)
+		self.units = []
+		for x in units_raw:
+			power = int(x[3])
+			base = Measurement.__intermediate_to_base(x[1], power)
+			code = Measurement.__base_to_code(base[0], power)
+			self.scale *= base[1] * code[1]
+			self.units.append((code[0], power))
+
+		self.value = np.double(raw_value) / self.scale
+
+	def double(self):
+		# Unscale according to each unit.
+		return self.value * self.scale
 
 class Step:
 	def __init__(self):
@@ -252,3 +327,49 @@ class Simulation (threading.Thread):
 		if self.state_need_lock:
 			self.__state_lock.release()
 		return r
+
+class __CLProgram:
+	def __init__(self, sim):
+		self.variables = {}
+		self.sim = sim
+		self.prog = None
+		self.prog_name = None
+		self.input_metadata = {}
+		self.output_metadata = {}
+		pass
+
+	# Steps:
+	# Copy data over into arrays
+	# Copy arrays over into memory
+	# Run
+	# Retrieve the results and store them.
+
+	# Move the data into memory
+	def prepare(self):
+		# Copy data over into arrays
+
+		# Copy arrays over into memory.
+		pass
+
+	def run(self):
+		# Prepare to call upon the input.
+		data_shape = "None" # PLACEHOLDER
+		device_data_names = [] # PLACEHOLDER
+		call_params = ["self.sim.cl_q", data_shape]
+		for dev in device_data_names:
+			call_params.extend(dev)
+
+		# Prepare the output.
+		for var, typ in self.output_metadata.items():
+			eval("result_" + var + " = cl_array.empty(self.sim.cl_q, " + data_shape + ", dtype=" + str() + ")")
+
+		# Run
+		eval("self.prog." + self.prog_name + "(" + ", ".join() + ")")
+
+		# Retrieve the output.
+		out = {}
+		for var, typ in self.output_metadata.items():
+			out[var] = eval("result_" + var + ".get()")
+
+	def define(self):
+		pass
