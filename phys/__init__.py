@@ -3,46 +3,86 @@ import pyopencl as cl
 import time 
 import threading
 import re
+import numbers
+import copy
+
+class MeasurementError(ArithmeticError):
+	pass
 
 class Measurement:
 	# Dictionary of tuples 
 	
 	# https://www.bipm.org/en/measurement-units/
+	# https://www.bipm.org/utils/common/pdf/si-brochure/SI-Brochure-9-EN.pdf
 	# How do SI units translate to code units? abbrev => code unit, scale (CASE SENSITIVE)
-	code_scale = {"s": [("T", 1, 1)],
-					"m": [("L", 1, 1)],
-					"kg": [("M", 1, 1)],
-					"A": [("I", 1, 1)],
-					"K": [("Th", 1, 1)],
-					"mol": [("N", 1, 1)],
-					"cd": [("J", 1, 1)]
+	code_scale = {"s": [1, ("T", 1)],
+					"m": [1, ("L", 1)],
+					"kg": [1, ("M", 1)],
+					"A": [1, ("I", 1)],
+					"K": [1, ("Th", 1)],
+					"mol": [1, ("N", 1)],
+					"cd": [1, ("J", 1)]
 					}
 
 	unit_scale = {	# Time Units
-					"s": [("s", 1, 1)],
+					"s": [1, ("s", 1)],
 
 					# Length units
-					"m": [("m", 1, 1)],
+					"m": [1, ("m", 1)],
 
 					# Mass units
-					"kg": [("kg", 1, 1)],
+					"kg": [1, ("kg", 1)],
 
 					# Electrical units
-					"A": [("A", 1, 1)],
+					"A": [1, ("A", 1)],
 
 					# Heat units
-					"K": [("K", 1, 1)],
+					"K": [1, ("K", 1)],
 
 					# Substance units
-					"mol": [("mol", 1, 1)],
+					"mol": [1, ("mol", 1)],
 
 					# Luminance units
-					"cd": [("cd", 1, 1)],
+					"cd": [1, ("cd", 1)],
 					
 
 					# Other derived units
+					"N" : [1, ("kg", 1), ("m", 1), ("s", -2)],
+					"Pa" : [1, ("kg", 1), ("m", -1), ("s", -2)],
 
-					# How are we gonna do this?
+					"J" : [1, ("N", 1), ("m", 1)],
+					"W" : [1, ("kg", 1), ("m", 2), ("s", -3)],
+					"C" : [1, ("A", 1), ("s", 1)],
+					"V" : [1, ("W", 1), ("A", -1)],
+					"F" : [1, ("C", 1), ("V", -1)],
+					"Ohm" : [1, ("V", 1), ("A", 1)],
+					"Wb" : [1, ("V", 1), ("s", 1)],
+					"T" : [1, ("Wb", 1), ("m", -2)],
+					"H" : [1, ("Wb", 1), ("A", -1)],
+					# Require Kelvins in all cases
+					"lm" : [1, ("cd", 1)], # Ignoring unitless measures like radians and steradians.
+					"Bq" : [1, ("s", -1)],
+					"Gy" : [1, ("m", 2), ("s", -2)],
+					"Sv" : [1, ("m", 2), ("s", -2)],
+					"kat" : [1, ("mol", 1), ("s", -1)],
+
+
+					# "Non-SI units accepted for use with the SI units"
+					"min" : [60, ("s", 1)],
+					"h" : [3600, ("s", 1)],
+					"d" : [86400, ("s", 1)],
+
+					"au" : [149597870700, ("m", 1)],
+
+					"ha" : [10 ** 4, ("m", 2)],
+
+					"L" : [10 ** -3, ("m", 3)],
+
+					"t" : [10 ** 3, ("kg", 1)],
+					"Da" : [1.6605390666050e-27, ("kg", 1)],
+
+					"eV" : [1.602176634e-19, ("J", 1)]
+
 					}
 
 	unit_match = re.compile("""((?P<u>[a-zA-Z]*)(\*\*|\^)(?P<p>-?\d*))""")
@@ -50,11 +90,30 @@ class Measurement:
 	# Return new unit, new scaling factor.
 	# Question: fractional dimensions?
 	def __intermediate_to_base(unit, power):
-		return (Measurement.unit_scale[unit][0], Measurement.unit_scale[unit][1] ** power)
+		# u ** p <=> (subunit ** power * ... * subunit ** power) ** power
+		scale = Measurement.unit_scale[unit][0] ** power
+		units = []
+		for subunit in Measurement.unit_scale[unit][1:]:
+			# Recurse downward until the most basic units are hit.
+			if subunit[0] in Measurement.code_scale: # Is it a base unit?
+				units.append((subunit[0], subunit[1] * power))
+			else:
+				units.extend(Measurement.__intermediate_to_base(subunit[0], subunit[1] * power)[1:])
 
-	# Return new unit, new scaling factor.
-	def __base_to_code(unit, power):
-		return (Measurement.code_scale[unit][0], Measurement.code_scale[unit][1] ** power) 
+		# Deal with duplicate units?
+
+		return [scale] + units
+
+	def __base_to_code(base):
+				# u ** p <=> (subunit ** power * ... * subunit ** power) ** power
+		scale = 1
+		units = []
+		for unit in base:
+			scale *= Measurement.code_scale[unit[0]][0] ** unit[1]
+			units.append((Measurement.code_scale[unit[0]][1][0], Measurement.code_scale[unit[0]][1][1] * unit[1]))
+
+		return [scale] + units
+
 
 	def set_code_scale():
 		pass
@@ -64,19 +123,137 @@ class Measurement:
 		self.scale = np.double(1)
 
 		units_raw = Measurement.unit_match.findall(units)
-		self.units = []
+		self.units = {}
+		self.original_units = {}
 		for x in units_raw:
 			power = int(x[3])
 			base = Measurement.__intermediate_to_base(x[1], power)
-			code = Measurement.__base_to_code(base[0], power)
-			self.scale *= base[1] * code[1]
-			self.units.append((code[0], power))
+			code = Measurement.__base_to_code(base[1:])
+			self.scale *= base[0]
+
+			if x[1] not in self.original_units:
+				self.original_units[x[1]] = power
+			else:
+				self.original_units[x[1]] += power
+
+			for conv_unit in code[1:]:
+				if conv_unit[0] not in self.units:
+					self.units[conv_unit[0]] = conv_unit[1]
+				else:
+					self.units[conv_unit[0]] += conv_unit[1]
 
 		self.value = np.double(raw_value) / self.scale
+
+	def __hid_init__(value, scale, units, original_units):
+		x = Measurement(1, "")
+		x.value = value
+		x.scale = scale
+		x.units = copy.deepcopy(units)
+		x.original_units = copy.deepcopy(original_units)
+		return x
 
 	def double(self):
 		# Unscale according to each unit.
 		return self.value * self.scale
+
+	def __str__(self):
+		return " ".join([str(self.double())] + [k + "**" + str(v) for k, v in self.original_units.items()])
+
+	def __repr__(self):
+		return self.__str__()
+
+	def __add__(self, other):
+		if self.units != other.units:
+			raise MeasurementError("Unit dimensions of " + str(self) + " and " + str(other) + " do not match.")
+		if self.scale != other.scale:
+			raise MeasurementError("Internal scales of " + str(self) + " and " + str(other)  + " do not match.")
+		
+		return Measurement.__hid_init__(self.value + other.value, self.scale, self.units, self.original_units)
+
+	def __sub__(self, other):
+		temp = Measurement.__hid_init__(-other.value, other.scale, other.units, other.original_units)
+		return __add__(self, temp)
+
+	def __mul__(self, other):
+		# Combine units
+		if isinstance(other, numbers.Number):
+			return Measurement.__hid_init__(self.value * other, self.scale, self.units, self.original_units)
+		else:
+			new_units = {}
+			new_original_units = {}
+			for unit, power in list(self.units.items()) + list(other.units.items()):
+				if unit not in new_units:
+					new_units[unit] = power
+				else:
+					new_units[unit] += power
+
+			for unit, power in list(self.original_units.items()) + list(other.original_units.items()):
+				if unit not in new_original_units:
+					new_original_units[unit] = power
+				else:
+					new_original_units[unit] += power
+
+			# Calculate new scale
+			new_scale = self.scale * other.scale
+			new_value = (self.double() * other.double()) / new_scale
+			
+			return Measurement.__hid_init__(new_value, new_scale, new_units, new_original_units)
+
+	def __pow__(self, other, modulo=None):
+		res = Measurement.__hid_init__(self.value, self.scale, self.units, self.original_units)
+
+		for unit, value in self.units.items():
+			res.units[unit] *= other 
+		for unit, value in self.original_units.items():
+			res.original_units[unit] *= other
+
+		res.value = self.value ** other
+		res.scale = self.scale ** other
+		if modulo != None:
+			res.value %= modulo
+			res.scale %= modulo
+		return res
+
+
+	def __truediv__(self, other):
+		if isinstance(other, numbers.Number):
+			return Measurement.__hid_init__(self.value / other, self.scale, self.units, self.original_units)
+		else:
+			new_units = {}
+			new_original_units = {}
+			for unit, power in self.units.items():
+				new_units[unit] = power
+
+			for unit, power in other.units.items():
+				if unit not in new_units:
+					new_units[unit] = -power
+				else:
+					new_units[unit] -= power
+
+			for unit, power in self.original_units.items():
+				new_original_units[unit] = power
+
+			for unit, power in other.original_units.items():
+				if unit not in new_original_units:
+					new_original_units[unit] = -power
+				else:
+					new_original_units[unit] -= power
+
+			# Calculate new scale
+			new_scale = self.scale / other.scale
+			new_value = (self.double() / other.double()) / new_scale
+			
+			return Measurement.__hid_init__(new_value, new_scale, new_units, new_original_units)
+
+	def __rtruediv__(self, other):
+		new_units = {}
+		new_original_units = {}
+		for unit, value in self.units.items():
+			new_units[unit] = -value
+		for unit, value in self.original_units.items():
+			new_original_units[unit] = -value
+		return Measurement.__hid_init__(other / self.value, 1 / self.scale, new_units, new_original_units)
+
 
 class Step:
 	def __init__(self):
