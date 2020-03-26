@@ -5,11 +5,16 @@ import threading
 import re
 import numbers
 import copy
+import math
 
 class MeasurementError(ArithmeticError):
 	pass
 
-class Measurement:
+
+# Question: Add decorator for unit validation?
+
+
+class Measurement(numbers.Real):
 	# Dictionary of tuples 
 	
 	# https://www.bipm.org/en/measurement-units/
@@ -106,17 +111,21 @@ class Measurement:
 
 	def __base_to_code(base):
 				# u ** p <=> (subunit ** power * ... * subunit ** power) ** power
-		scale = 1
+		scale = base[0]
 		units = []
-		for unit in base:
+		for unit in base[1:]:
 			scale *= Measurement.code_scale[unit[0]][0] ** unit[1]
 			units.append((Measurement.code_scale[unit[0]][1][0], Measurement.code_scale[unit[0]][1][1] * unit[1]))
 
 		return [scale] + units
 
+	# Assumption: Code scale is set at the beginning.
+	def set_code_scale(base_unit, new_scale):
+		Measurement.code_scale[base_unit][0] = new_scale
+		
 
-	def set_code_scale():
-		pass
+	def reset_code_scale(base_unit):
+		Measurement.set_code_scale(base_unit, 1)
 
 	def __init__(self, raw_value, units):
 		# Convert raw units to code units. Calculate new scale.
@@ -128,8 +137,8 @@ class Measurement:
 		for x in units_raw:
 			power = int(x[3])
 			base = Measurement.__intermediate_to_base(x[1], power)
-			code = Measurement.__base_to_code(base[1:])
-			self.scale *= base[0]
+			code = Measurement.__base_to_code(base)
+			self.scale *= code[0]
 
 			if x[1] not in self.original_units:
 				self.original_units[x[1]] = power
@@ -142,7 +151,7 @@ class Measurement:
 				else:
 					self.units[conv_unit[0]] += conv_unit[1]
 
-		self.value = np.double(raw_value) / self.scale
+		self.value = np.double(raw_value) * self.scale
 
 	def __hid_init__(value, scale, units, original_units):
 		x = Measurement(1, "")
@@ -152,31 +161,43 @@ class Measurement:
 		x.original_units = copy.deepcopy(original_units)
 		return x
 
-	def double(self):
+	def __float__(self):
 		# Unscale according to each unit.
-		return self.value * self.scale
+		return np.double(self.value / self.scale)
 
 	def __str__(self):
-		return " ".join([str(self.double())] + [k + "**" + str(v) for k, v in self.original_units.items()])
+		return " ".join([str(float(self))] + [k + "**" + str(v) for k, v in self.original_units.items()])
+
+	def fstr(self):
+		return str(float(self))
 
 	def __repr__(self):
 		return self.__str__()
 
+	def __getattr__(self, name):
+		if name == "real":
+			return self.__float__()
+		elif name == "imag":
+			return 0
+		else:
+			raise AttributeError()
+
 	def __add__(self, other):
 		if self.units != other.units:
 			raise MeasurementError("Unit dimensions of " + str(self) + " and " + str(other) + " do not match.")
-		if self.scale != other.scale:
-			raise MeasurementError("Internal scales of " + str(self) + " and " + str(other)  + " do not match.")
 		
 		return Measurement.__hid_init__(self.value + other.value, self.scale, self.units, self.original_units)
 
+	def __radd__(self, other):
+		return Measurement.__add__(other, self)
+
 	def __sub__(self, other):
 		temp = Measurement.__hid_init__(-other.value, other.scale, other.units, other.original_units)
-		return __add__(self, temp)
+		return Measurement.__add__(self, temp)
 
 	def __mul__(self, other):
 		# Combine units
-		if isinstance(other, numbers.Number):
+		if not isinstance(other, Measurement):
 			return Measurement.__hid_init__(self.value * other, self.scale, self.units, self.original_units)
 		else:
 			new_units = {}
@@ -195,9 +216,15 @@ class Measurement:
 
 			# Calculate new scale
 			new_scale = self.scale * other.scale
-			new_value = (self.double() * other.double()) / new_scale
+			new_value = (float(self) * float(other)) * new_scale
 			
 			return Measurement.__hid_init__(new_value, new_scale, new_units, new_original_units)
+
+	def __rmul__(self, other):
+		return Measurement.__hid_init__(other * self.value, self.scale, self.units, self.original_units)
+
+	def __rpow__(self, other, modulo):
+		raise MeasurementException("Cannot raise a scalar to the power of a Measurement")
 
 	def __pow__(self, other, modulo=None):
 		res = Measurement.__hid_init__(self.value, self.scale, self.units, self.original_units)
@@ -215,9 +242,43 @@ class Measurement:
 		return res
 
 
+	for name, op in [("__truediv__", "/"), ("__floordiv__", "//"), ("__mod__", "%")]:
+		exec("""def """ + name + """(self, other): 
+	if not isinstance(other, Measurement):
+		return Measurement.__hid_init__(self.value """ + op + """ other, self.scale, self.units, self.original_units)
+	else:
+		new_units = {}
+		new_original_units = {}
+		for unit, power in self.units.items():
+			new_units[unit] = power
+
+		for unit, power in other.units.items():
+			if unit not in new_units:
+				new_units[unit] = -power
+			else:
+				new_units[unit] -= power
+
+		for unit, power in self.original_units.items():
+			new_original_units[unit] = power
+
+		for unit, power in other.original_units.items():
+			if unit not in new_original_units:
+				new_original_units[unit] = -power
+			else:
+				new_original_units[unit] -= power
+
+		# Calculate new scale
+		new_scale = self.scale * other.scale
+		new_value = (self.__float__() """ + op + """ other.__float__ ()) * new_scale
+		
+		return Measurement.__hid_init__(new_value, new_scale, new_units, new_original_units)
+			""")
+
+	"""
 	def __truediv__(self, other):
-		if isinstance(other, numbers.Number):
-			return Measurement.__hid_init__(self.value / other, self.scale, self.units, self.original_units)
+			def __floordiv__(self, other):
+		if not isinstance(other, Measurement):
+			return Measurement.__hid_init__(self.value // other, self.scale, self.units, self.original_units)
 		else:
 			new_units = {}
 			new_original_units = {}
@@ -240,19 +301,62 @@ class Measurement:
 					new_original_units[unit] -= power
 
 			# Calculate new scale
-			new_scale = self.scale / other.scale
-			new_value = (self.double() / other.double()) / new_scale
+			new_scale = self.scale * other.scale
+			new_value = (self.__float__() // other.__float__ ()) * new_scale
 			
 			return Measurement.__hid_init__(new_value, new_scale, new_units, new_original_units)
+	"""
 
-	def __rtruediv__(self, other):
-		new_units = {}
-		new_original_units = {}
-		for unit, value in self.units.items():
-			new_units[unit] = -value
-		for unit, value in self.original_units.items():
-			new_original_units[unit] = -value
-		return Measurement.__hid_init__(other / self.value, 1 / self.scale, new_units, new_original_units)
+	for name, op in [("__rtruediv__", "/"), ("__rfloordiv__", "/"), ("__rmod__", "%")]:
+		exec("""def """ + name + """(self, other):
+	new_units = {}
+	new_original_units = {}
+	for unit, value in self.units.items():
+		new_units[unit] = -value
+	for unit, value in self.original_units.items():
+		new_original_units[unit] = -value
+	return Measurement.__hid_init__(other """ + op + """ self.value, 1 """ + op + """ self.scale, new_units, new_original_units)
+	""")
+
+
+	def __abs__(self):
+		return Measurement.__hid_init__(abs(self.value), self.scale, self.units, self.original_units)
+
+	def __ceil__(self):
+		return Measurement.__hid_init__(math.ceil(self.value), self.scale, self.units, self.original_units)
+
+	def __eq__(self, other):
+		if isinstance(other, Measurement):
+			return self.value == other.value and self.scale == other.scale and self.units == other.units
+		else:
+			return self.value == other
+
+	def __floor__(self):
+		return Measurement.__hid_init__(math.floor(self.value), self.scale, self.units, self.original_units)
+
+	def __le__(self, other):
+		if isinstance(other, Measurement):
+			return self.__float__() <= other.__float__()
+		else:
+			return self.__float__() <= other
+
+	def __lt__(self, other):
+		if isinstance(other, Measurement):
+			return self.__float__() < other.__float__()
+		else:
+			return self.__float__() < other
+
+	def __neg__(self):
+		return Measurement.__hid_init__(-self.value, self.scale, self.units, self.original_units)
+
+	def __pos__(self):
+		return self
+
+	def __trunc__(self):
+		return Measurement.__hid_init__(math.trunc(self.value), self.scale, self.units, self.original_units)
+
+	def __round__(self):
+		return Measurement.__hid_init__(math.round(self.value), self.scale, self.units, self.original_units)
 
 
 class Step:
