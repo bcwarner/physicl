@@ -1,5 +1,6 @@
 import numpy as np
 import pyopencl as cl
+import pyopencl.array as cl_array
 import time 
 import threading
 import re
@@ -171,6 +172,9 @@ class Measurement(numbers.Real):
 	def fstr(self):
 		return str(float(self))
 
+	def valstr(self):
+		return str(self.value)
+
 	def __repr__(self):
 		return self.__str__()
 
@@ -223,7 +227,7 @@ class Measurement(numbers.Real):
 	def __rmul__(self, other):
 		return Measurement.__hid_init__(other * self.value, self.scale, self.units, self.original_units)
 
-	def __rpow__(self, other, modulo):
+	def __rpow__(self, other, modulo=None):
 		raise MeasurementException("Cannot raise a scalar to the power of a Measurement")
 
 	def __pow__(self, other, modulo=None):
@@ -329,7 +333,7 @@ class Measurement(numbers.Real):
 		if isinstance(other, Measurement):
 			return self.value == other.value and self.scale == other.scale and self.units == other.units
 		else:
-			return self.value == other
+			return self.__float__() == other
 
 	def __floor__(self):
 		return Measurement.__hid_init__(math.floor(self.value), self.scale, self.units, self.original_units)
@@ -358,6 +362,12 @@ class Measurement(numbers.Real):
 	def __round__(self):
 		return Measurement.__hid_init__(math.round(self.value), self.scale, self.units, self.original_units)
 
+	def sqrt(self):
+		return self.__pow__(1/2)
+
+	def rescale(self):
+		# Question: Should we allow multiple simultaneous scales, or one singular scale that is present throughout the program.
+		pass
 
 class Step:
 	def __init__(self):
@@ -609,15 +619,39 @@ class Simulation (threading.Thread):
 			self.__state_lock.release()
 		return r
 
+class __CLInput:
+	types = ["obj", "obj_def", "obj_action", "const", "other"]
+	def __init__(self, **kwargs):
+		self.name = kwargs["name"]
+		self.type = kwargs["type"]
+		if kwargs["type"] == "obj":
+			self.code = "self." + self.name + ".append(obj." + kwargs["obj_attr"] + ")"
+			self.ctype = "double" if "ctype" not in kwargs else kwargs["ctype"]
+		elif kwargs["type"] == "obj_def":
+			self.code = "self." + self.name + ".append(" + kwargs["obj_def"] + ")"
+			self.ctype = "double" if "ctype" not in kwargs else kwargs["ctype"]
+		elif kwargs["type"] == "obj_track":
+			self.code = "self." + self.name + ".append(" + kwargs["obj_track"] + ")"
+		elif kwargs["type"] in ["obj_action", "other"]:
+			self.code = kwargs["code"]
+		elif kwargs["type"] == "const":
+			self.const_value = kwargs["const_value"]
+			self.ctype = "double" if "ctype" not in kwargs else kwargs["ctype"] 
+
+class __CLOutput:
+	def __init__(self, **kwargs):
+		self.name = kwargs["name"]
+		self.ctype = kwargs["ctype"] if "ctype" in kwargs else "double"
+
 class __CLProgram:
-	def __init__(self, sim):
+	def __init__(self, sim, name, kernel_code):
 		self.variables = {}
 		self.sim = sim
 		self.prog = None
-		self.prog_name = None
-		self.input_metadata = {}
-		self.output_metadata = {}
-		pass
+		self.prog_name = name
+		self.prep_metadata = []
+		self.output_metadata = []
+		self.kernel_code = kernel_code
 
 	# Steps:
 	# Copy data over into arrays
@@ -625,32 +659,89 @@ class __CLProgram:
 	# Run
 	# Retrieve the results and store them.
 
+	def build_kernel(self):
+		kernel_outer = "__kernel void " + self.prog_name + "("
+		cat = []
+		for item in filter(lambda x: x.type in ["obj", "obj_def", "const"], self.prep_metadata):
+			if item.type == "obj" or item.type == "obj_def":
+				cat.append("__global " + item.ctype  + " *" + item.name)
+			elif item.type == "const":
+				cat.append(item.ctype + " " + item.name)
+
+		cat.extend(["__global " + item.ctype + " *" + item.name for item in self.output_metadata])
+		kernel_outer += ", ".join(cat) + "){"
+		# TODO: Process the kernel code.
+		kernel = kernel_outer + self.kernel_code + "}"
+
+		print(kernel)
+
+		self.prog = cl.Program(self.sim.cl_ctx, kernel).build()
+		#for 
+
+
 	# Move the data into memory
-	def prepare(self):
+	def run(self):
+		# Import necessary libraries?
+
+		initial = ""
+		obj_collection = """for obj in self.sim.objects:"""
+		other = ""
+		np_initial = ""
+		np_device = ""
+		for item in self.prep_metadata:
+			if item.type in ["obj", "obj_def"]:
+				initial += "self." + item.name + " = []\n"
+				np_initial += "self." + item.name + "_np = np.array(self." + item.name + ", dtype=np.double)\n"
+				np_device += "self." + item.name + "_dev = cl_array.to_device(self.sim.cl_q, self." + item.name + "_np)\n"
+			if item.type == "obj_track":
+				initial += "self." + item.name + " = []\n"
+			if item.type in ["obj", "obj_def", "obj_action"]:
+				obj_collection += "\n\t" + item.code
+			elif item.type == ["other"]:
+				other += "\t" + item.code
+
+		print(initial, obj_collection, np_initial, np_device, other, sep="\n\n")
+
+		exec("import phys\nimport phys.light")
+
+		exec(initial)
+		exec(obj_collection)
+		exec(np_initial)
+		exec(np_device)
+		exec(other)
+
 		# Copy data over into arrays
 
 		# Copy arrays over into memory.
-		pass
 
-	def run(self):
 		# Prepare to call upon the input.
-		data_shape = "None" # PLACEHOLDER
-		device_data_names = [] # PLACEHOLDER
-		call_params = ["self.sim.cl_q", data_shape]
-		for dev in device_data_names:
-			call_params.extend(dev)
+
+		# Compile if we haven't already.
+
+		# Find the first instance of an "obj" __CLInput instance, this will define the global size.
+		self.global_shape = "None" # PLACEHOLDER
+		for item in self.prep_metadata:
+			if item.type == "obj":
+				self.global_shape = "self." + item.name + "_np.shape"
+				break
+
+		self.local_shape = "None" # Probably unnecesary.
+
+		self.call_params = ["self.sim.cl_q", self.global_shape, self.local_shape] + ["self." + item.name + "_dev.data" if item.type != "const" else "np.double(" + item.const_value + ")" for item in filter(lambda x: x.type in ["obj", "obj_def", "const"], self.prep_metadata)] + ["self.res_" + item.name + ".data" for item in self.output_metadata]
 
 		# Prepare the output.
-		for var, typ in self.output_metadata.items():
-			eval("result_" + var + " = cl_array.empty(self.sim.cl_q, " + data_shape + ", dtype=" + str() + ")")
+		for var in self.output_metadata:
+			#print("res_" + var.name + " = cl_array.empty(self.sim.cl_q, " + global_shape + ", dtype=" + var.type +  ")")
+			exec("self.res_" + var.name + " = cl_array.empty(self.sim.cl_q, " + self.global_shape + ", dtype=np.double)")
 
-		# Run
-		eval("self.prog." + self.prog_name + "(" + ", ".join() + ")")
-
+		# Run (this could be very costly for performance, how are we going to mitigate this?)
+		print("self.prog." + self.prog_name + "(" + ", ".join(self.call_params) + ")")
+		exec("self.prog." + self.prog_name + "(" + ", ".join(self.call_params) + ")")
+		
 		# Retrieve the output.
 		out = {}
-		for var, typ in self.output_metadata.items():
-			out[var] = eval("result_" + var + ".get()")
+		for var in self.output_metadata:
+			#print(""""out[var.name] = exec("self.res_" + var.name + ".get()")""")
+			out[var.name] = eval("self.res_" + var.name + ".get()")
 
-	def define(self):
-		pass
+		return out
