@@ -619,7 +619,7 @@ class Simulation (threading.Thread):
 			self.__state_lock.release()
 		return r
 
-class __CLInput:
+class CLInput:
 	types = ["obj", "obj_def", "obj_action", "const", "other"]
 	def __init__(self, **kwargs):
 		self.name = kwargs["name"]
@@ -638,12 +638,12 @@ class __CLInput:
 			self.const_value = kwargs["const_value"]
 			self.ctype = "double" if "ctype" not in kwargs else kwargs["ctype"] 
 
-class __CLOutput:
+class CLOutput:
 	def __init__(self, **kwargs):
 		self.name = kwargs["name"]
 		self.ctype = kwargs["ctype"] if "ctype" in kwargs else "double"
 
-class __CLProgram:
+class CLProgram:
 	def __init__(self, sim, name, kernel_code):
 		self.variables = {}
 		self.sim = sim
@@ -673,8 +673,6 @@ class __CLProgram:
 		# TODO: Process the kernel code.
 		kernel = kernel_outer + self.kernel_code + "}"
 
-		print(kernel)
-
 		self.prog = cl.Program(self.sim.cl_ctx, kernel).build()
 		#for 
 
@@ -695,12 +693,11 @@ class __CLProgram:
 				np_device += "self." + item.name + "_dev = cl_array.to_device(self.sim.cl_q, self." + item.name + "_np)\n"
 			if item.type == "obj_track":
 				initial += "self." + item.name + " = []\n"
+				obj_collection += "\n\t" + item.code 
 			if item.type in ["obj", "obj_def", "obj_action"]:
 				obj_collection += "\n\t" + item.code
 			elif item.type == ["other"]:
 				other += "\t" + item.code
-
-		print(initial, obj_collection, np_initial, np_device, other, sep="\n\n")
 
 		exec("import phys\nimport phys.light")
 
@@ -732,10 +729,9 @@ class __CLProgram:
 		# Prepare the output.
 		for var in self.output_metadata:
 			#print("res_" + var.name + " = cl_array.empty(self.sim.cl_q, " + global_shape + ", dtype=" + var.type +  ")")
-			exec("self.res_" + var.name + " = cl_array.empty(self.sim.cl_q, " + self.global_shape + ", dtype=np.double)")
+			exec("self.res_" + var.name + " = cl_array.empty(self.sim.cl_q, " + self.global_shape + ", dtype=np." + var.ctype + ")")
 
 		# Run (this could be very costly for performance, how are we going to mitigate this?)
-		print("self.prog." + self.prog_name + "(" + ", ".join(self.call_params) + ")")
 		exec("self.prog." + self.prog_name + "(" + ", ".join(self.call_params) + ")")
 		
 		# Retrieve the output.
