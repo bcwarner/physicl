@@ -15,7 +15,7 @@ class MeasurementError(ArithmeticError):
 # Question: Add decorator for unit validation?
 
 
-class Measurement(numbers.Real):
+class Measurement(np.ndarray):
 	# Dictionary of tuples 
 	
 	# https://www.bipm.org/en/measurement-units/
@@ -128,8 +128,12 @@ class Measurement(numbers.Real):
 	def reset_code_scale(base_unit):
 		Measurement.set_code_scale(base_unit, 1)
 
-	def __init__(self, raw_value, units):
-		# Convert raw units to code units. Calculate new scale.
+	def __new__(cls, raw_value, units):
+		x = np.asarray(raw_value, dtype=np.double).view(cls)
+		x.__scale__(units)
+		return x
+
+	def __scale__(self, units):
 		self.scale = np.double(1)
 
 		units_raw = Measurement.unit_match.findall(units)
@@ -152,22 +156,33 @@ class Measurement(numbers.Real):
 				else:
 					self.units[conv_unit[0]] += conv_unit[1]
 
-		self.value = np.double(raw_value) * self.scale
+		for i in range(0, self.size):
+			self.flat[i] *= self.scale
+
+	def __unscaled__(self):
+		x = np.copy(self).view(np.ndarray)
+		for i in range(0, x.size):
+			x.flat[i] /= self.scale
+		return x
+
+	def value(self):
+		return self.__unscaled__()
+
+	def __array_finalize__(self, obj):
+		# Convert raw units to code units. Calculate new scale.
+		if obj is None: return
+		if getattr(self, "units", None) != None:
+			self.scale(units)
 
 	def __hid_init__(value, scale, units, original_units):
-		x = Measurement(1, "")
-		x.value = value
+		x = Measurement(np.asarray(value), "")
 		x.scale = scale
 		x.units = copy.deepcopy(units)
 		x.original_units = copy.deepcopy(original_units)
 		return x
 
-	def __float__(self):
-		# Unscale according to each unit.
-		return np.double(self.value / self.scale)
-
 	def __str__(self):
-		return " ".join([str(float(self))] + [k + "**" + str(v) for k, v in self.original_units.items()])
+		return self.__unscaled__().__str__() + " " + " ".join([k + "**" + str(v) for k, v in self.original_units.items()])
 
 	def fstr(self):
 		return str(float(self))
@@ -178,13 +193,75 @@ class Measurement(numbers.Real):
 	def __repr__(self):
 		return self.__str__()
 
+
+	def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+		# Coerce inputs
+
+		inputs_conv = [item if isinstance(item, Measurement) else Measurement(item, "") for item in inputs]
+		inputs_nd = [x.view(np.ndarray) for x in inputs_conv]
+		res = None
+		if ufunc.__name__ in ["add", "subtract"]:
+			for x in inputs_conv[1:]:
+				if x.units != inputs[0].units:
+					raise MeasurementError("Unit mismatch")
+			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
+			res.scale = inputs[0].scale
+			res.units = copy.deepcopy(inputs[0].units)
+			res.original_units = copy.deepcopy(inputs[0].original_units)
+		elif ufunc.__name__ in ["multiply", "divide", "true_divide", "floor_divide"]:
+			new_units = {}
+			new_original_units = {}
+			for unit, power in list(inputs_conv[0].units.items()) + list(inputs_conv[1].units.items()):
+				if unit not in new_units:
+					new_units[unit] = power
+				else:
+					new_units[unit] += power * -1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1
+
+			for unit, power in list(inputs_conv[0].original_units.items()) + list(inputs_conv[1].original_units.items()):
+				if unit not in new_original_units:
+					new_original_units[unit] = power
+				else:
+					new_original_units[unit] += power * -1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1
+
+			# Calculate new scale
+			new_scale = inputs_conv[0].scale * inputs_conv[1].scale
+			unsc_inp = [x.__unscaled__().view(np.ndarray) for x in inputs_conv]
+			res = Measurement(np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *unsc_inp, **kwargs)), "")
+			res.scale = new_scale
+			res.units = new_units
+			res.original_units = new_original_units
+		elif ufunc.__name__ in ["power", "square", "sqrt"]:
+			if ufunc.__name__ == "power":
+				power = inputs_nd[1]
+			elif ufunc.__name__ == "square":
+				power = 2
+			elif ufunc.__name__ == "sqrt":
+				power = 1/2
+			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
+			res.units = copy.deepcopy(inputs[0].units)
+			res.original_units = copy.deepcopy(inputs[0].original_units)
+			res.scale = inputs[0].scale ** power
+
+			for unit, value in self.units.items():
+				res.units[unit] *= power
+			for unit, value in self.original_units.items():
+				res.original_units[unit] *= power
+		elif len(inputs_nd) == 1:
+			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
+			res.units = copy.deepcopy(inputs[0].units)
+			res.original_units = copy.deepcopy(inputs[0].original_units)
+			res.scale = inputs[0].scale
+
+		return res
+
+	"""
 	def __getattr__(self, name):
 		if name == "real":
 			return self.__float__()
 		elif name == "imag":
 			return 0
 		else:
-			raise AttributeError()
+			raise AttributeError("Missing attribute " + name)
 
 	def __add__(self, other):
 		if self.units != other.units:
@@ -245,11 +322,13 @@ class Measurement(numbers.Real):
 			res.scale %= modulo
 		return res
 
-
+	
+		"""
+	"""
 	for name, op in [("__truediv__", "/"), ("__floordiv__", "//"), ("__mod__", "%")]:
-		exec("""def """ + name + """(self, other): 
+		#exec(""def "" + name + ""(self, other): 
 	if not isinstance(other, Measurement):
-		return Measurement.__hid_init__(self.value """ + op + """ other, self.scale, self.units, self.original_units)
+		return Measurement.__hid_init__(self.value " + op + "" other, self.scale, self.units, self.original_units)
 	else:
 		new_units = {}
 		new_original_units = {}
@@ -273,12 +352,12 @@ class Measurement(numbers.Real):
 
 		# Calculate new scale
 		new_scale = self.scale * other.scale
-		new_value = (self.__float__() """ + op + """ other.__float__ ()) * new_scale
+		new_value = (self.__float__() " + op + "" other.__float__ ()) * new_scale
 		
 		return Measurement.__hid_init__(new_value, new_scale, new_units, new_original_units)
-			""")
+			"")
 
-	"""
+	""
 	def __truediv__(self, other):
 			def __floordiv__(self, other):
 		if not isinstance(other, Measurement):
@@ -311,15 +390,15 @@ class Measurement(numbers.Real):
 			return Measurement.__hid_init__(new_value, new_scale, new_units, new_original_units)
 	"""
 
-	for name, op in [("__rtruediv__", "/"), ("__rfloordiv__", "/"), ("__rmod__", "%")]:
-		exec("""def """ + name + """(self, other):
-	new_units = {}
-	new_original_units = {}
-	for unit, value in self.units.items():
-		new_units[unit] = -value
-	for unit, value in self.original_units.items():
-		new_original_units[unit] = -value
-	return Measurement.__hid_init__(other """ + op + """ self.value, 1 """ + op + """ self.scale, new_units, new_original_units)
+	#for name, op in [("__rtruediv__", "/"), ("__rfloordiv__", "/"), ("__rmod__", "%")]:
+	#	exec("""def """ + name + """(self, other):
+	#new_units = {}
+	#new_original_units = {}
+	#for unit, value in self.units.items():
+	#	new_units[unit] = -value
+	#for unit, value in self.original_units.items():
+	#	new_original_units[unit] = -value
+	#return Measurement.__hid_init__(other """ + op + """ self.value, 1 """ + op + """ self.scale, new_units, new_original_units)
 	""")
 
 
@@ -364,6 +443,8 @@ class Measurement(numbers.Real):
 
 	def sqrt(self):
 		return self.__pow__(1/2)
+
+	"""
 
 	def rescale(self):
 		# Question: Should we allow multiple simultaneous scales, or one singular scale that is present throughout the program.

@@ -11,9 +11,9 @@ import copy
 """
 SI definition for speed of light
 """
-c = 299792458 #phys.Measurement(np.double(299792458), "m**1 s**-1") # Defined here: https://www.bipm.org/en/CGPM/db/17/1/
-h = 6.62607015e-34 #phys.Measurement(np.double(6.62607015e-34), "J**1 s**1") # Defined here: https://www.bipm.org/utils/common/pdf/CGPM-2018/26th-CGPM-Resolutions.pdf
-kB = 1.380649e-23 #phys.Measurement(np.double(1.380649e-23), "J**1 K**-1") # Boltzmann constant, defined here: https://www.bipm.org/utils/common/pdf/si-brochure/SI-Brochure-9.pdf
+c = phys.Measurement(np.double(299792458), "m**1 s**-1") # Defined here: https://www.bipm.org/en/CGPM/db/17/1/
+h = phys.Measurement(np.double(6.62607015e-34), "J**1 s**1") # Defined here: https://www.bipm.org/utils/common/pdf/CGPM-2018/26th-CGPM-Resolutions.pdf
+kB = phys.Measurement(np.double(1.380649e-23), "J**1 K**-1") # Boltzmann constant, defined here: https://www.bipm.org/utils/common/pdf/si-brochure/SI-Brochure-9.pdf
 
 class PhotonObject(phys.Object):
 	"""
