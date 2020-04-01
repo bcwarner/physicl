@@ -224,9 +224,8 @@ class Measurement(np.ndarray):
 					new_original_units[unit] += power * -1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1
 
 			# Calculate new scale
-			new_scale = inputs_conv[0].scale * inputs_conv[1].scale
-			unsc_inp = [x.__unscaled__().view(np.ndarray) for x in inputs_conv]
-			res = Measurement(np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *unsc_inp, **kwargs)), "")
+			new_scale = inputs_conv[0].scale * (inputs_conv[1].scale ** (-1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1))
+			res = Measurement(np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)), "")
 			res.scale = new_scale
 			res.units = new_units
 			res.original_units = new_original_units
