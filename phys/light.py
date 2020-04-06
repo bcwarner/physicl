@@ -23,15 +23,15 @@ class PhotonObject(phys.Object):
 
 
 	# Make it so we can have light that's slower than this?
-	def __init__(self, attrs={}):
+	def __init__(self, **kwargs):
 		"""
 		Initializes the photon object and checks for constraints.
 
 		"""
-		super().__init__(attrs)
+		super().__init__(kwargs)
 		if np_lin.norm(self.v) != np_lin.norm(c):
 			raise Exception("Not a valid speed.") # May not work in non-vacuum mediums.
-		if "E" not in attrs:
+		if "E" not in kwargs:
 			raise Exception("Needs a valid energy.") # Handle wavelengths as an alternative?
 
 
@@ -49,10 +49,11 @@ def wavelength_from_E(E):
 	return (h * c) / E
 
 
+# Optimize
 def planck_distribution(E, T):
-	coef1 = 15 / (np.pi ** 4 * kB * T)
-	coef2 = E / (kB * T)
-	coef3 = 1 / (np.e ** (E / (kB * T)))
+	coef1 = 15 / (np.pi ** 4 * kB * T) # J ** -1
+	coef2 = E / (kB * T) # unitless
+	coef3 = 1 / (np.e ** (E / (kB * T))) # unitless
 	return coef1 * (coef2 ** 3) * coef3
 
 # Do we care about error?
@@ -97,12 +98,12 @@ def planck_phot_distribution(E_min, E_max, T, bins=1000):
 	for x in range(1, len(gamma_cdf)):
 		if gamma_cdf[x] >= rand and rand >= gamma_cdf[x - 1]:
 			return E[x]
-	return planck_phot_distribution(E_min, E_max, T, bins) # unsuccessful attempt, try again
+	#return planck_phot_distribution(E_min, E_max, T, bins) # unsuccessful attempt, try again
 	# Return the normalized proportion (generate_photons requires a proportion)
 
 
 def generate_photons_from_E(E):
-	return [PhotonObject({"E": x, "v": np.array([c, 0, 0])}) for x in E]
+	return [PhotonObject({"E": x, "v": c * [1, 0, 0]}) for x in E]
 
 def generate_photons(n, fn=lambda: np.random.power(3), min=0, max=0, bins=-1):
 	"""
@@ -123,7 +124,7 @@ def generate_photons(n, fn=lambda: np.random.power(3), min=0, max=0, bins=-1):
 	return out
 
 
-class ScatterDeleteStep(phys.Step):
+class ScatterDeleteStepReference(phys.Step):
 	"""
 	Step that scatters photon objects from a simulation by removing them.
 	Assumes that the simulation composes the entirety of the medium and has a constant number density and cross-sectional area.
@@ -216,6 +217,43 @@ class ScatterDeleteStep(phys.Step):
 			p_next = np.random.random()
 			if p_coll >= p_next:
 				sim.remove_obj(obj)
+
+class ScatterDeleteStep(phys.Step):
+    def __init__(self, n, A):
+        self.n = n
+        self.A = A
+        self.built = False
+        
+    def run(self, sim):
+        if self.built != True:
+            skip = phys.CLInput(name="photon_check", type="obj_action", code="if type(obj) != phys.light.PhotonObject:\n \t\t continue")
+            d0, d1, d2 = tuple([phys.CLInput(name="d" + str(x), type="obj", obj_attr="dr[" + str(x) + "]") for x in range(0, 3)])
+            rand = phys.CLInput(name="rand", type="obj_def", obj_def="np.random.random()")
+            A_, n_ = phys.CLInput(name="A", type="const", const_value=str(self.n)), phys.CLInput(name="n", type="const", const_value=str(self.A))
+            pht = phys.CLInput(name="pht", type="obj_track", obj_track="obj")
+            res = phys.CLOutput(name="res", ctype="int")
+            kernel = """
+                int gid = get_global_id(0);
+                    double norm = sqrt(pow(d0[gid], 2) + pow(d1[gid], 2) + pow(d2[gid], 2));
+                    double pcoll = A * n * norm;
+                    if (pcoll >= rand[gid]){
+                        // Mark for removal.
+                        res[gid] = 1;
+                    } else {
+                        res[gid] = 0;
+                    }
+                """
+            
+            self.prog = phys.CLProgram(sim, "test", kernel)
+            self.prog.prep_metadata = [skip, d0, d1, d2, rand, pht, A_, n_]
+            self.prog.output_metadata = [res]
+            self.prog.build_kernel()
+            self.built = True
+        
+        out = self.prog.run()
+        for idx, x in enumerate(out["res"]):
+            if x == 1:
+                sim.remove_obj(self.prog.pht[idx])
 
 class ScatterSphericalStep(phys.Step):
 	"""

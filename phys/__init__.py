@@ -165,24 +165,20 @@ class Measurement(np.ndarray):
 			x.flat[i] /= self.scale
 		return x
 
-	def value(self):
-		return self.__unscaled__()
-
 	def __array_finalize__(self, obj):
 		# Convert raw units to code units. Calculate new scale.
 		if obj is None: return
 		if getattr(self, "units", None) != None:
-			self.scale(units)
+			self.scale(self.units)
 
-	def __hid_init__(value, scale, units, original_units):
-		x = Measurement(np.asarray(value), "")
-		x.scale = scale
-		x.units = copy.deepcopy(units)
-		x.original_units = copy.deepcopy(original_units)
-		return x
+	def value(self):
+		return self.__unscaled__()
+
+	def unitstr(self):
+		return " ".join([k + "**" + str(v) for k, v in self.original_units.items()])
 
 	def __str__(self):
-		return self.__unscaled__().__str__() + " " + " ".join([k + "**" + str(v) for k, v in self.original_units.items()])
+		return str(self.value()) + " " + self.unitstr()
 
 	def fstr(self):
 		return str(float(self))
@@ -195,33 +191,45 @@ class Measurement(np.ndarray):
 
 
 	def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-		# Coerce inputs
-
-		inputs_conv = [item if isinstance(item, Measurement) else Measurement(item, "") for item in inputs]
+		# Coerce to first units for addition.
+		units_idx = 0 if isinstance(inputs[0], Measurement) else 1
+		inputs_conv = [item if isinstance(item, Measurement) else Measurement(item, inputs[units_idx].unitstr()) for item in inputs]
 		inputs_nd = [x.view(np.ndarray) for x in inputs_conv]
+		if "out" in kwargs:
+			kwargs["out"] = tuple(item.view(np.ndarray) for item in kwargs["out"])
+
 		res = None
 		if ufunc.__name__ in ["add", "subtract"]:
-			for x in inputs_conv[1:]:
-				if x.units != inputs[0].units:
-					raise MeasurementError("Unit mismatch")
+			#for x in inputs_conv[1:]:
+			#	if x.units != inputs[0].units:
+			#		raise MeasurementError("Unit mismatch for " + str(x) + ", " + str(inputs[0]))
+			# Ignore this for now, as a lot of code uses plain numbers.
+
+
 			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
-			res.scale = inputs[0].scale
-			res.units = copy.deepcopy(inputs[0].units)
-			res.original_units = copy.deepcopy(inputs[0].original_units)
+			res.scale = inputs_conv[0].scale
+			res.units = copy.deepcopy(inputs_conv[0].units)
+			res.original_units = copy.deepcopy(inputs_conv[0].original_units)
 		elif ufunc.__name__ in ["multiply", "divide", "true_divide", "floor_divide"]:
 			new_units = {}
 			new_original_units = {}
-			for unit, power in list(inputs_conv[0].units.items()) + list(inputs_conv[1].units.items()):
-				if unit not in new_units:
-					new_units[unit] = power
-				else:
-					new_units[unit] += power * -1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1
+			for unit, power in inputs_conv[0].units.items():
+				new_units[unit] = power
 
-			for unit, power in list(inputs_conv[0].original_units.items()) + list(inputs_conv[1].original_units.items()):
-				if unit not in new_original_units:
-					new_original_units[unit] = power
+			for unit, power in inputs_conv[1].units.items():
+				if unit not in new_units:
+					new_units[unit] = power * (-1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1)
 				else:
-					new_original_units[unit] += power * -1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1
+					new_units[unit] += power * (-1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1)
+
+			for unit, power in inputs_conv[0].original_units.items():
+				new_original_units[unit] = power
+
+			for unit, power in inputs_conv[1].original_units.items():
+				if unit not in new_units:
+					new_original_units[unit] = power * (-1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1)
+				else:
+					new_original_units[unit] += power * (-1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1)
 
 			# Calculate new scale
 			new_scale = inputs_conv[0].scale * (inputs_conv[1].scale ** (-1 if ufunc.__name__ in ["divide", "true_divide", "floor_divide"] else 1))
@@ -237,20 +245,28 @@ class Measurement(np.ndarray):
 			elif ufunc.__name__ == "sqrt":
 				power = 1/2
 			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
-			res.units = copy.deepcopy(inputs[0].units)
-			res.original_units = copy.deepcopy(inputs[0].original_units)
-			res.scale = inputs[0].scale ** power
+			res.units = copy.deepcopy(inputs[0].units) if inputs[0] is Measurement else {} # Unitless if being exponentiated to?
+			res.original_units = copy.deepcopy(inputs[0].original_units) if inputs[0] is Measurement else {}
+			res.scale = (inputs[0].scale ** power) if inputs[0] is Measurement else 1
 
-			for unit, value in self.units.items():
-				res.units[unit] *= power
-			for unit, value in self.original_units.items():
-				res.original_units[unit] *= power
+			if inputs[0] is Measurement:
+				for unit, value in self.units.items():
+					res.units[unit] *= power
+				for unit, value in self.original_units.items():
+					res.original_units[unit] *= power
 		elif len(inputs_nd) == 1:
 			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
 			res.units = copy.deepcopy(inputs[0].units)
 			res.original_units = copy.deepcopy(inputs[0].original_units)
 			res.scale = inputs[0].scale
 
+		if "out" in kwargs:
+			tup = []
+			for item in kwargs["out"]:
+				tup.append(item.view(Measurement))
+				tup[-1].units = res.units
+				tup[-1].scale = res.scale
+				tup[-1].original_units = res.original_units
 		return res
 
 	"""
@@ -499,7 +515,7 @@ class UpdateTimeStep(Step):
 		"""
 		sim.dt = self.fn(sim)
 		sim.t += sim.dt
-		sim.ts.append(sim.t)
+		sim.ts.append(copy.deepcopy(sim.t))
 
 class MeasureStep(Step):
 	def __init__(self, out_fn = None):
@@ -541,16 +557,16 @@ class Object:
 	"""
 	Represents a generic object in the simulation. Inheriting subclasses will add defining features.
 	"""
-	def __init__(self, attrs={}):
+	def __init__(self, **kwargs):
 		"""
 		Initializes an object with basic attributes, including position, change in last position, velocity, and acceleration.
 		Also sets any additional attributes as defined with attrs.
 		"""
-		self.r = np.array([0] * 3, dtype=np.double)
-		self.dr = np.array([0] * 3, dtype=np.double) # change since last step
-		self.dv = np.array([0] * 3, dtype=np.double) # change since last step
-		self.v = np.array([0] * 3, dtype=np.double)
-		self.a = np.array([0] * 3, dtype=np.double)
+		self.r = Measurement([0] * 3, "m**1")
+		self.dr = Measurement([0] * 3, "m**1") # change since last step
+		self.dv = Measurement([0] * 3, "m**1 s**-2") # change since last step
+		self.v = Measurement([0] * 3, "m**1 s**-1")
+		self.a = Measurement([0] * 3, "m**1 s**-2")
 		for attr, val in attrs.items():
 			self.__setattr__(attr, val)
 
@@ -561,7 +577,7 @@ class Simulation (threading.Thread):
 	Represents a simulation that runs on a separate thread. Contains a number of attributes, holds objects, and applies steps in the order they are given.
 	Must be started using start().
 	"""
-	def __init__(self, params={}):
+	def __init__(self, **kwargs):
 		"""
 		Initializes the simulation with a default number of parameters, which may be overriden using the `params` parameter.
 		Also sets up the OpenCL context.
@@ -573,10 +589,10 @@ class Simulation (threading.Thread):
 		self.exit = lambda x: len(x.objects) == 0 # Default exit state
 		self.state_fn = lambda x: {"objects": len(x.objects), "t": x.t, "dt": x.dt, "run_time": time.time() - x.start_time}
 		self.state_need_lock = False
-		for attr, val in params.items():
+		for attr, val in kwargs.items():
 			self.__setattr__(attr, val)
-		self.dt = np.double(0)
-		self.t = np.double(0)
+		self.dt = Measurement(np.double(0), "s**1")
+		self.t = Measurement(np.double(0), "s**1")
 		self.objects = []
 		self.steps = {}
 		self.__state_lock = threading.Lock()
