@@ -15,6 +15,8 @@ c = phys.Measurement(np.double(299792458), "m**1 s**-1") # Defined here: https:/
 h = phys.Measurement(np.double(6.62607015e-34), "J**1 s**1") # Defined here: https://www.bipm.org/utils/common/pdf/CGPM-2018/26th-CGPM-Resolutions.pdf
 kB = phys.Measurement(np.double(1.380649e-23), "J**1 K**-1") # Boltzmann constant, defined here: https://www.bipm.org/utils/common/pdf/si-brochure/SI-Brochure-9.pdf
 
+print(phys.Measurement.code_scale)
+
 class PhotonObject(phys.Object):
 	"""
 	Represents a simple photon.
@@ -28,7 +30,7 @@ class PhotonObject(phys.Object):
 		Initializes the photon object and checks for constraints.
 
 		"""
-		super().__init__(kwargs)
+		super().__init__(**kwargs)
 		if np_lin.norm(self.v) != np_lin.norm(c):
 			raise Exception("Not a valid speed.") # May not work in non-vacuum mediums.
 		if "E" not in kwargs:
@@ -118,9 +120,9 @@ def generate_photons(n, fn=lambda: np.random.power(3), min=0, max=0, bins=-1):
 	# min_fn x is miniumum => min in distribution generator
 	# max_fn analagous to min_fn 
 	out = []
-	for i in range(n):
-		E = min + (max - min) * fn()
-		out.append(PhotonObject({"E": E, "v": np.array([c, 0, 0])}))
+	for i in range(int(n)):
+		Eo = min + (max - min) * fn()
+		out.append(PhotonObject(E=Eo, v=phys.Measurement([c, 0, 0], "m**1 s**-1")))
 	return out
 
 

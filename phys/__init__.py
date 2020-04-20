@@ -129,7 +129,11 @@ class Measurement(np.ndarray):
 		Measurement.set_code_scale(base_unit, 1)
 
 	def __new__(cls, raw_value, units):
-		x = np.asarray(raw_value, dtype=np.double).view(cls)
+		x = None
+		if isinstance(raw_value, list):
+			x = np.asarray([x.__unscaled__() if isinstance(x, Measurement) else x for x in raw_value], dtype=np.double).view(cls)
+		else:
+			x = np.asarray(raw_value, dtype=np.double).view(cls)
 		x.__scale__(units)
 		return x
 
@@ -177,18 +181,17 @@ class Measurement(np.ndarray):
 	def unitstr(self):
 		return " ".join([k + "**" + str(v) for k, v in self.original_units.items()])
 
-	def __str__(self):
-		return str(self.value()) + " " + self.unitstr()
-
 	def fstr(self):
 		return str(float(self))
 
 	def valstr(self):
-		return str(self.value)
+		return str(self.value())
+
+	def __str__(self):
+		return str(self.view(np.ndarray))
 
 	def __repr__(self):
-		return self.__str__()
-
+		return str(self.value()) + " " + self.unitstr()
 
 	def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
 		# Coerce to first units for addition.
@@ -245,15 +248,14 @@ class Measurement(np.ndarray):
 			elif ufunc.__name__ == "sqrt":
 				power = 1/2
 			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
-			res.units = copy.deepcopy(inputs[0].units) if inputs[0] is Measurement else {} # Unitless if being exponentiated to?
-			res.original_units = copy.deepcopy(inputs[0].original_units) if inputs[0] is Measurement else {}
-			res.scale = (inputs[0].scale ** power) if inputs[0] is Measurement else 1
+			res.units = copy.deepcopy(inputs_conv[0].units) # Unitless if being exponentiated to?
+			res.original_units = copy.deepcopy(inputs_conv[0].original_units)
+			res.scale = (inputs[0].scale ** power) if isinstance(inputs[0], Measurement) else 1
 
-			if inputs[0] is Measurement:
-				for unit, value in self.units.items():
-					res.units[unit] *= power
-				for unit, value in self.original_units.items():
-					res.original_units[unit] *= power
+			for unit, value in self.units.items():
+				res.units[unit] *= power
+			for unit, value in self.original_units.items():
+				res.original_units[unit] *= power
 		elif len(inputs_nd) == 1:
 			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
 			res.units = copy.deepcopy(inputs[0].units)
@@ -567,7 +569,7 @@ class Object:
 		self.dv = Measurement([0] * 3, "m**1 s**-2") # change since last step
 		self.v = Measurement([0] * 3, "m**1 s**-1")
 		self.a = Measurement([0] * 3, "m**1 s**-2")
-		for attr, val in attrs.items():
+		for attr, val in kwargs.items():
 			self.__setattr__(attr, val)
 
 	# Question: what do we do about unknown values?
