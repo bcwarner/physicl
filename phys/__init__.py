@@ -92,7 +92,7 @@ class Measurement(np.ndarray):
 
 					}
 
-	unit_match = re.compile("""((?P<u>[a-zA-Z]*)(\*\*|\^)(?P<p>-?\d*))""")
+	unit_match = re.compile("""((?P<u>[a-zA-Z]*)\s*(\*\*|\^)\s*(?P<p>-?\d*))""")
 
 	# Return new unit, new scaling factor.
 	# Question: fractional dimensions?
@@ -166,8 +166,11 @@ class Measurement(np.ndarray):
 
 	def __unscaled__(self):
 		x = np.copy(self).view(np.ndarray)
-		for i in range(0, x.size):
-			x.flat[i] /= self.scale
+		try:
+			for i in range(0, x.size):
+				x.flat[i] /= self.scale
+		except:
+			print("Error: " + str(x))
 		return x
 
 	def __array_finalize__(self, obj):
@@ -257,7 +260,7 @@ class Measurement(np.ndarray):
 				res.units[unit] *= power
 			for unit, value in self.original_units.items():
 				res.original_units[unit] *= power
-		elif len(inputs_nd) == 1:
+		else:
 			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
 			res.units = copy.deepcopy(inputs[0].units)
 			res.original_units = copy.deepcopy(inputs[0].original_units)

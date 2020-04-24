@@ -17,11 +17,12 @@ def rand_ray():
 	return ret
 
 def sim():	
-	s = phys.Simulation(params={"bounds": np.array([1000, 1000, 1000]), "cl_on": True, "exit": lambda cond: cond.t >= 0.100})
+	s = phys.Simulation(bounds=np.array([1000, 1000, 1000]), cl_on=True, exit=lambda cond: cond.t >= 0.100)
 	for i in range(0, 10000):
-		s.add_obj(phys.light.PhotonObject(rand_ray()))
+		s.add_obj(phys.light.PhotonObject(**rand_ray()))
 
 	return s
+
 
 def test_scatter_spherical():
 	"""
@@ -63,3 +64,4 @@ def test_scatter_delete():
 	res = np.isclose(error, 0, 0, 0.10)
 	print("Scatter deletion test error: " + str(error))
 	assert res
+
