@@ -1,6 +1,6 @@
-import phys
+import physicl
 
-class NewtonianKinematicsStep(phys.Step):
+class NewtonianKinematicsStep(physicl.Step):
 	"""
 	Moves all objects according to Newtonian kinematics.
 	"""

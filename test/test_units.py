@@ -3,9 +3,9 @@ import pytest
 import sys
 import os
 
-import phys
-import phys.newton
-import phys.light
+import physicl as phys
+import physicl.newton
+import physicl.light
 import numpy as np
 import numpy.linalg as lin
 import time

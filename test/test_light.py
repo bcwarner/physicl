@@ -3,9 +3,9 @@ import pytest
 import sys
 import os
 
-import phys
-import phys.newton
-import phys.light
+import physicl as phys
+import physicl.newton
+import physicl.light
 import numpy as np
 import time
 
@@ -31,7 +31,7 @@ def test_scatter_spherical():
 	x = sim()
 	x.add_step(0, phys.UpdateTimeStep(lambda s: np.double(0.001)))
 	x.add_step(1, phys.newton.NewtonianKinematicsStep())
-	x.add_step(2, phys.light.ScatterSphericalStep(np.double(0.001), np.double(0.001)))
+	x.add_step(2, phys.light.ScatterIsotropicStep(A=np.double(0.001), n=np.double(0.001)))
 	step = phys.light.ScatterSignMeasureStep(None, True)
 	x.add_step(3, step)
 

@@ -183,7 +183,10 @@ class Measurement(np.ndarray):
 		return self.__unscaled__()
 
 	def unitstr(self):
-		return " ".join([k + "**" + str(v) for k, v in self.original_units.items()])
+		try:
+			return " ".join([k + "**" + str(v) for k, v in self.original_units.items()])
+		except:
+			return "" # Phantom Measurement objects
 
 	def fstr(self):
 		return str(float(self))
@@ -192,15 +195,25 @@ class Measurement(np.ndarray):
 		return str(self.value())
 
 	def __str__(self):
-		return str(self.view(np.ndarray))
+		return str(self.view(np.ndarray)).upper()
+
+	def __format__(self, fmt):
+		return super().__format__(fmt).upper()
 
 	def __repr__(self):
 		return str(self.value()) + " " + self.unitstr()
 
+	def __deepcopy__(self, memo):
+		res = np.copy(self).view(Measurement)
+		res.units = copy.deepcopy(self.units, memo)
+		res.original_units = copy.deepcopy(self.original_units, memo)
+		res.scale = self.scale
+		return res
+
 	def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
 		# Coerce to first units for addition.
 		units_idx = 0 if isinstance(inputs[0], Measurement) else 1
-		inputs_conv = [item if isinstance(item, Measurement) else Measurement(item, inputs[units_idx].unitstr()) for item in inputs]
+		inputs_conv = [item if (isinstance(item, Measurement) and "units" in dir(item)) else Measurement(item, inputs[units_idx].unitstr()) for item in inputs]
 		inputs_nd = [x.view(np.ndarray) for x in inputs_conv]
 		if "out" in kwargs:
 			kwargs["out"] = tuple(item.view(np.ndarray) for item in kwargs["out"])
@@ -211,8 +224,6 @@ class Measurement(np.ndarray):
 			#	if x.units != inputs[0].units:
 			#		raise MeasurementError("Unit mismatch for " + str(x) + ", " + str(inputs[0]))
 			# Ignore this for now, as a lot of code uses plain numbers.
-
-
 			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
 			res.scale = inputs_conv[0].scale
 			res.units = copy.deepcopy(inputs_conv[0].units)
@@ -254,7 +265,7 @@ class Measurement(np.ndarray):
 			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
 			res.units = copy.deepcopy(inputs_conv[0].units) # Unitless if being exponentiated to?
 			res.original_units = copy.deepcopy(inputs_conv[0].original_units)
-			res.scale = (inputs[0].scale ** power) if isinstance(inputs[0], Measurement) else 1
+			res.scale = (inputs_conv[0].scale ** power) if isinstance(inputs_conv[0], Measurement) else 1
 
 			for unit, value in self.units.items():
 				res.units[unit] *= power
@@ -262,9 +273,9 @@ class Measurement(np.ndarray):
 				res.original_units[unit] *= power
 		else:
 			res = np.asarray(super(Measurement, self).__array_ufunc__(ufunc, method, *inputs_nd, **kwargs)).view(Measurement)
-			res.units = copy.deepcopy(inputs[0].units)
-			res.original_units = copy.deepcopy(inputs[0].original_units)
-			res.scale = inputs[0].scale
+			res.units = copy.deepcopy(inputs_conv[0].units)
+			res.original_units = copy.deepcopy(inputs_conv[0].original_units)
+			res.scale = inputs_conv[0].scale
 
 		if "out" in kwargs:
 			tup = []
@@ -609,7 +620,7 @@ class CLProgram:
 			elif item.type == ["other"]:
 				other += "\t" + item.code
 
-		exec("import phys\nimport phys.light")
+		exec("import physicl\nimport physicl.light")
 
 		exec(initial)
 		exec(obj_collection)

@@ -1,4 +1,4 @@
-import phys
+import physicl
 import pyopencl as cl
 import pyopencl.array as cl_array
 import numpy.linalg as np_lin
@@ -11,11 +11,11 @@ import copy
 """
 SI definition for speed of light
 """
-c = phys.Measurement(np.double(299792458), "m**1 s**-1") # Defined here: https://www.bipm.org/en/CGPM/db/17/1/
-h = phys.Measurement(np.double(6.62607015e-34), "J**1 s**1") # Defined here: https://www.bipm.org/utils/common/pdf/CGPM-2018/26th-CGPM-Resolutions.pdf
-kB = phys.Measurement(np.double(1.380649e-23), "J**1 K**-1") # Boltzmann constant, defined here: https://www.bipm.org/utils/common/pdf/si-brochure/SI-Brochure-9.pdf
+c = physicl.Measurement(np.double(299792458), "m**1 s**-1") # Defined here: https://www.bipm.org/en/CGPM/db/17/1/
+h = physicl.Measurement(np.double(6.62607015e-34), "J**1 s**1") # Defined here: https://www.bipm.org/utils/common/pdf/CGPM-2018/26th-CGPM-Resolutions.pdf
+kB = physicl.Measurement(np.double(1.380649e-23), "J**1 K**-1") # Boltzmann constant, defined here: https://www.bipm.org/utils/common/pdf/si-brochure/SI-Brochure-9.pdf
 
-class PhotonObject(phys.Object):
+class PhotonObject(physicl.Object):
 	"""
 	Represents a simple photon.
 	Constrained to require an energy (E) and a velocity whose Euclidean norm is the speed of light.
@@ -51,10 +51,13 @@ def wavelength_from_E(E):
 
 # Optimize
 def planck_distribution(E, T):
-	coef1 = 15 / (np.pi ** 4 * kB * T) # J ** -1
-	coef2 = E / (kB * T) # unitless
-	coef3 = 1 / (np.e ** (E / (kB * T))) # unitless
-	return coef1 * (coef2 ** 3) * coef3
+	E_conv = E.__unscaled__() if isinstance(E, physicl.Measurement) else E
+	T_conv = T.__unscaled__() if isinstance(T, physicl.Measurement) else T
+	kB_conv = kB.__unscaled__()
+	coef1 = 15 / (np.pi ** 4 * kB_conv * T_conv) # J ** -1
+	coef2 = E_conv / (kB_conv * T_conv) # unitless
+	coef3 = 1 / (np.e ** (E_conv / (kB_conv * T_conv))) # unitless
+	return physicl.Measurement(coef1 * (coef2 ** 3) * coef3, "J**-1")
 
 # Do we care about error?
 def planck_probability(E_min, E_max, T, integrator=lambda fn, a, b: scipy.integrate.quad(fn, a, b)):
@@ -72,7 +75,8 @@ def planck_phot_distribution(E_min, E_max, T, bins=1000):
 	global last_planck_params
 	global last_planck_gamma_norm
 	global last_planck_cdf
-	params = [E_min, E_max, T, bins]
+	params = [x.__unscaled__() if isinstance(x, physicl.Measurement) else x for x in [E_min, E_max, T, bins]]
+	E_min, E_max, T, bins = tuple(params)
 	gamma_norm = []
 	gamma_cdf = []
 	E = np.linspace(E_min, E_max, bins)
@@ -97,7 +101,7 @@ def planck_phot_distribution(E_min, E_max, T, bins=1000):
 	rand = np.random.rand()
 	for x in range(1, len(gamma_cdf)):
 		if gamma_cdf[x] >= rand and rand >= gamma_cdf[x - 1]:
-			return E[x]
+			return physicl.Measurement(E[x], "J**1")
 	#return planck_phot_distribution(E_min, E_max, T, bins) # unsuccessful attempt, try again
 	# Return the normalized proportion (generate_photons requires a proportion)
 
@@ -120,11 +124,11 @@ def generate_photons(n, fn=lambda: np.random.power(3), min=0, max=0, bins=-1):
 	out = []
 	for i in range(int(n)):
 		Eo = min + (max - min) * fn()
-		out.append(PhotonObject(E=Eo, v=phys.Measurement([c, 0, 0], "m**1 s**-1")))
+		out.append(PhotonObject(E=Eo, v=physicl.Measurement([c, 0, 0], "m**1 s**-1")))
 	return out
 
 
-class ScatterDeleteStepReference(phys.Step):
+class ScatterDeleteStepReference(physicl.Step):
 	"""
 	Step that scatters photon objects from a simulation by removing them.
 	Assumes that the simulation composes the entirety of the medium and has a constant number density and cross-sectional area.
@@ -218,7 +222,7 @@ class ScatterDeleteStepReference(phys.Step):
 			if p_coll >= p_next:
 				sim.remove_obj(obj)
 
-class ScatterDeleteStep(phys.Step):
+class ScatterDeleteStep(physicl.Step):
     def __init__(self, n, A):
         self.n = n
         self.A = A
@@ -226,12 +230,12 @@ class ScatterDeleteStep(phys.Step):
         
     def run(self, sim):
         if self.built != True:
-            skip = phys.CLInput(name="photon_check", type="obj_action", code="if type(obj) != phys.light.PhotonObject:\n \t\t continue")
-            d0, d1, d2 = tuple([phys.CLInput(name="d" + str(x), type="obj", obj_attr="dr[" + str(x) + "]") for x in range(0, 3)])
-            rand = phys.CLInput(name="rand", type="obj_def", obj_def="np.random.random()")
-            A_, n_ = phys.CLInput(name="A", type="const", const_value=str(self.n)), phys.CLInput(name="n", type="const", const_value=str(self.A))
-            pht = phys.CLInput(name="pht", type="obj_track", obj_track="obj")
-            res = phys.CLOutput(name="res", ctype="int")
+            skip = physicl.CLInput(name="photon_check", type="obj_action", code="if type(obj) != physicl.light.PhotonObject:\n \t\t continue")
+            d0, d1, d2 = tuple([physicl.CLInput(name="d" + str(x), type="obj", obj_attr="dr[" + str(x) + "]") for x in range(0, 3)])
+            rand = physicl.CLInput(name="rand", type="obj_def", obj_def="np.random.random()")
+            A_, n_ = physicl.CLInput(name="A", type="const", const_value=str(self.n)), physicl.CLInput(name="n", type="const", const_value=str(self.A))
+            pht = physicl.CLInput(name="pht", type="obj_track", obj_track="obj")
+            res = physicl.CLOutput(name="res", ctype="int")
             kernel = """
                 int gid = get_global_id(0);
                     double norm = sqrt(pow(d0[gid], 2) + pow(d1[gid], 2) + pow(d2[gid], 2));
@@ -244,7 +248,7 @@ class ScatterDeleteStep(phys.Step):
                     }
                 """
             
-            self.prog = phys.CLProgram(sim, "test", kernel)
+            self.prog = physicl.CLProgram(sim, "test", kernel)
             self.prog.prep_metadata = [skip, d0, d1, d2, rand, pht, A_, n_]
             self.prog.output_metadata = [res]
             self.prog.build_kernel()
@@ -255,9 +259,9 @@ class ScatterDeleteStep(phys.Step):
             if x == 1:
                 sim.remove_obj(self.prog.pht[idx])
 
-class ScatterSphericalStep(phys.Step):
+class ScatterIsotropicStep(physicl.Step):
 	"""
-	Step that scatters photons spherically, according to a defined number density (n) and a defined cross-sectional area (A).
+	Step that scatters photons isotropically, according to a defined number density (n) and a defined cross-sectional area (A).
 	
 	If the optional param wavelength_dep_scattering is set to True, then the probability of scattering will then be proportional to ((h * c) / E_wave)^-4 (i.e. divide by the wavelength to the power of 4)
 	"""
@@ -265,31 +269,31 @@ class ScatterSphericalStep(phys.Step):
 	# 1. Default params.
 	# 2. Wavelength dependent scattering.
 
-	def __init__(self, n, A, wavelength_dep_scattering = False, variable_n=False, variable_n_fn=None):
-		self.n = n 
-		self.A = A
-		self.wavelength_dep_scattering = wavelength_dep_scattering
-		self.variable_n = variable_n
-		self.variable_n_fn = variable_n_fn
+	def __init__(self, **kwargs):
+		self.n = kwargs.get("n", 1) 
+		self.A = kwargs.get("A", 1)
+		self.wavelength_dep_scattering = kwargs.get("wavelength_dep_scattering", False)
+		self.variable_n = kwargs.get("variable_n", False)
+		self.variable_n_fn = kwargs.get("variable_n_fn", None)
 		self.prog = None
 		self.built = False
 
 	def __run_cl(self, sim):
 		if self.built != True:
-			skip = phys.CLInput(name="photon_check", type="obj_action", code="if type(obj) != phys.light.PhotonObject:\n \t\t continue")
-			d0, d1, d2 = tuple([phys.CLInput(name="d" + str(x), type="obj", obj_attr="dr[" + str(x) + "]") for x in range(0, 3)])
-			rtheta, rphi, rand = tuple([phys.CLInput(name=x, type="obj_def", obj_def="np.random.random()" + mul) for x, mul in [("rtheta", "* 2 * np.pi"), ("rphi", "* np.pi"), ("rand", "")]])
-			ov0, ov1, ov2 = tuple([phys.CLInput(name="ov" + str(x), type="obj", obj_attr="v[" + str(x) + "]") for x in range(0, 3)])
-			A_, n_ = phys.CLInput(name="A", type="const", const_value=str(self.n)), phys.CLInput(name="n", type="const", const_value=str(self.A))
-			pht = phys.CLInput(name="pht", type="obj_track", obj_track="obj")
-			res0, res1, res2 = [phys.CLOutput(name="res" + str(x), ctype="double") for x in range(0, 3)]
+			skip = physicl.CLInput(name="photon_check", type="obj_action", code="if type(obj) != physicl.light.PhotonObject:\n \t\t continue")
+			d0, d1, d2 = tuple([physicl.CLInput(name="d" + str(x), type="obj", obj_attr="dr[" + str(x) + "]") for x in range(0, 3)])
+			rtheta, rphi, rand = tuple([physicl.CLInput(name=x, type="obj_def", obj_def="np.random.random()" + mul) for x, mul in [("rtheta", "* 2 * np.pi"), ("rphi", "* np.pi"), ("rand", "")]])
+			ov0, ov1, ov2 = tuple([physicl.CLInput(name="ov" + str(x), type="obj", obj_attr="v[" + str(x) + "]") for x in range(0, 3)])
+			A_, n_ = physicl.CLInput(name="A", type="const", const_value=str(self.n)), physicl.CLInput(name="n", type="const", const_value=str(self.A))
+			pht = physicl.CLInput(name="pht", type="obj_track", obj_track="obj")
+			res0, res1, res2 = [physicl.CLOutput(name="res" + str(x), ctype="double") for x in range(0, 3)]
 			
 			prep_metadata = [skip, d0, d1, d2, rtheta, rphi, rand, pht, A_, n_]
 			if self.wavelength_dep_scattering:
-				e = phys.CLInput(name="E", type="obj", obj_attr="E")
+				e = physicl.CLInput(name="E", type="obj", obj_attr="E")
 				prep_metadata += [e]
 			if self.variable_n:
-				r0, r1, r2 = tuple([phys.CLInput(name="r" + str(x), type="obj", obj_attr="r[" + str(x) + "]") for x in range(0, 3)])
+				r0, r1, r2 = tuple([physicl.CLInput(name="r" + str(x), type="obj", obj_attr="r[" + str(x) + "]") for x in range(0, 3)])
 				prep_metadata += [r0, r1, r2]
 
 			pcoll_vars = ["A", "n" if self.variable_n == False else "(" + self.variable_n_fn + ")", "norm"]
@@ -310,7 +314,7 @@ class ScatterSphericalStep(phys.Step):
 					}
 			"""
 
-			self.prog = phys.CLProgram(sim, "light_scatter_step_sphere", kernel)
+			self.prog = physicl.CLProgram(sim, "light_scatter_step_sphere", kernel)
 			self.prog.prep_metadata = prep_metadata
 			self.prog.output_metadata = [res0, res1, res2]
 			self.prog.build_kernel()
@@ -354,7 +358,7 @@ class ScatterSphericalStep(phys.Step):
 		else:
 			self.__run_cl(sim)
 
-class ScatterMeasureStep(phys.MeasureStep):
+class ScatterMeasureStep(physicl.MeasureStep):
 	"""
 	Measures the number of photons that cross through a series of planes. 
 	Each plane should be defined with a 3D numpy double array, with the coordinates not defining the location of the plane set to numpy.nan.
@@ -399,7 +403,7 @@ class ScatterMeasureStep(phys.MeasureStep):
 
 		self.data.append(np.array(out))
 
-class ScatterSignMeasureStep(phys.MeasureStep):
+class ScatterSignMeasureStep(physicl.MeasureStep):
 	"""
 	Measures the number of objects with a strictly positive coordinate at each step with regards to x, y, and z coordinates.
 	"""
@@ -426,12 +430,12 @@ class ScatterSignMeasureStep(phys.MeasureStep):
 
 		self.data.append(np.array(out))
 
-class TracePathMeasureStep(phys.MeasureStep):
+class TracePathMeasureStep(physicl.MeasureStep):
 	"""
 	Traces the path of object. If the object does not exist at any point, then the value 'nan;nan;nan' is traced. Otherwise the current coordinates are printed as a string.
 	"""
 
-	def __init__(self, out_fn, trace_type = phys.Object, id_info_fn = lambda x: str(type(x)), trace_dv=False):
+	def __init__(self, out_fn, trace_type = physicl.Object, id_info_fn = lambda x: str(type(x)), trace_dv=False):
 		super().__init__(out_fn)
 		self.trace_type = trace_type
 		self.id_info_fn = id_info_fn
@@ -447,11 +451,11 @@ class TracePathMeasureStep(phys.MeasureStep):
 			if "__trace_path_id" not in dir(obj):
 				obj.__setattr__("__trace_path_id", self.id_counter)
 				self.id_dict[self.id_counter] = self.id_info_fn(obj)
-				self.pos_dict[self.id_counter] = {"start": sim.t, "pos": []}
+				self.pos_dict[self.id_counter] = {"start": copy.deepcopy(sim.t), "pos": []}
 				if self.trace_dv:
 					self.pos_dict[self.id_counter]["freq"] = 0
 				self.id_counter += 1
-			self.pos_dict[obj.__getattribute__("__trace_path_id")]["pos"].append(np.array([obj.r[0], obj.r[1], obj.r[2]], dtype=np.double))
+			self.pos_dict[obj.__getattribute__("__trace_path_id")]["pos"].append(copy.deepcopy(obj.r))
 			if self.trace_dv and not np.array_equal(obj.dv, np.array([0,0,0])):
 				self.pos_dict[obj.__getattribute__("__trace_path_id")]["freq"] += 1
 			# Append each object to outpu
