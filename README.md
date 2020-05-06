@@ -10,6 +10,10 @@ PhysiCL is a Python module for writing physics simulations that utilize OpenCL t
 
 There are a number of Jupyter notebooks in the examples folder that highlight the usage of PhysiCL. PhysiCL is best suited for scenarios where it can be parallelized, namely those involving few interactions between different objects. 
 
+#### Installation
+
+To install PhysiCL, simply use `pip install physicl`.
+
 #### Contributing
 
 There are a number of ways you can contribute. Current tasks include:
