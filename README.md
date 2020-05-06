@@ -1,5 +1,5 @@
 <p align="center">
-<img src="docs/logo.png" width="400px">
+<img src="https://raw.githubusercontent.com/bcwarner/physicl/master/docs/logo.png" width="400px">
 </p>
 
 PhysiCL is a Python module for writing physics simulations that utilize OpenCL to accelerate calculations. It includes:
