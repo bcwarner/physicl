@@ -22,5 +22,6 @@ setuptools.setuptools.setup(
         "Intended Audience :: Science/Research",
         "Development Status :: 3 - Alpha"
     ],
+    install_requires=["numpy", "pyopencl", "pytest", "scipy"],
     python_requires='>=3.6',
 )
