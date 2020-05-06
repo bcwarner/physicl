@@ -1,4 +1,6 @@
-![PhysiCL](docs/logo.png)
+<p align="center">
+<img src="docs/logo.png" width="400px">
+</p>
 
 PhysiCL is a Python module for writing physics simulations that utilize OpenCL to accelerate calculations. It includes:
 
