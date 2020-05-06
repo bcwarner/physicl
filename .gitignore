@@ -112,13 +112,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-classes_phys.synctex.gz
-classes_phys.tex
-docs/diagrams/classes.dot
-docs/diagrams/classes.png
-docs/diagrams/packages.dot
-docs/diagrams/packages.png
-examples/data_.csv
-examples/data_2.csv
-examples/out.mp4
-examples/trace_path.mp4
+*.csv
+*.mp4
+*.gz
+*.tar.gz
+*.tex
